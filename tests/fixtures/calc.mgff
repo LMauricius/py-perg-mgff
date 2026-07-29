@@ -1,0 +1,59 @@
+# A tiny calculator language.
+
+t Lex (
+
+    d Digit = 0-9
+    d Alpha = a-z|A-Z
+    d AlNum = a-z|A-Z|0-9
+
+    d Int = ( Digit )+
+          > token
+
+    d Number = Int ( . ( Digit )+ )?
+             > token  skip(false)
+
+    d Ident = Alpha ( AlNum )*
+            > token
+
+    # length-based: "<=" (the two-item "< =") takes precedence over "<"
+    d Op = < =
+         | <
+         | =
+         | +
+         | -
+         | *
+         | /
+         > token string
+
+    d Space  = ( \_|\t|\n )+
+        > token  skip
+
+    d LParen = \(
+        > token
+    d RParen = \)
+        > token
+)
+
+# mixfix macro: an R, then zero or more (S R)
+d sep(R)by(S) = R (S R)*
+
+t Parse (
+
+    # order-based: the first alternative that succeeds is the match
+    d Expr = Term + Expr
+           / Term - Expr
+           / Term
+
+    d Term = Factor * Term
+           / Factor / Term
+           # the second / on the line above is an ordinary item, not a marker
+           / Factor
+
+    d Factor = Number
+             / Ident
+             / \( Expr \)
+
+    d Signed = ( (+)/(-) )? Number
+
+    d AssignList = sep(Ident = Expr)by(,)
+)

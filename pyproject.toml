@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pyperg"
+version = "0.0.1"
+description = "Parser Environment Regenerator: a grammar generator for the MGFF notation"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "LMauricius" }]
+
+[project.scripts]
+pyperg = "pyperg.cli.main:main"
+
+# Built-in generator backends. Third-party backends register under the same group.
+[project.entry-points."pyperg.generators"]
+dump = "pyperg.generators.dump:DumpGenerator"
+python = "pyperg.generators.python:PythonGenerator"
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
