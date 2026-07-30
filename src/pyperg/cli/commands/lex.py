@@ -7,28 +7,33 @@ import argparse
 from ...diagnostics.source import SourceFile
 from ...mgff.cst import File, Group, Item, Line, Text, render_item
 from ...mgff.lexer import lex
+from .base import Command
 
-NAME = "lex"
-HELP = "show how a file splits into lines, items and groups"
+class LexCommand(Command):
+    name = "lex"
+    help = "show how a file splits into lines, items and groups"
 
+    def add_cli_arguments(self, cli_parser: argparse.ArgumentParser) -> None:
+        cli_parser.add_argument("file", help="the MGFF file to read")
+        cli_parser.add_argument(
+            "--spans",
+            action="store_true",
+            help="annotate every node with its source span",
+        )
+        cli_parser.add_argument(
+            "--blank-lines",
+            action="store_true",
+            help="show blank lines instead of skipping them",
+        )
 
-def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParser:
-    parser = subparsers.add_parser(NAME, help=HELP, description=HELP)
-    parser.add_argument("file", help="the MGFF file to read")
-    parser.add_argument(
-        "--spans", action="store_true", help="annotate every node with its source span"
-    )
-    parser.add_argument(
-        "--blank-lines", action="store_true", help="show blank lines instead of skipping them"
-    )
-    return parser
-
-
-def run(args: argparse.Namespace) -> int:
-    source = SourceFile.read(args.file)
-    tree = lex(source)
-    print(_render_file(tree, spans=args.spans, blanks=args.blank_lines), end="")
-    return 0
+    def run(self, cli_args: argparse.Namespace) -> int:
+        source = SourceFile.read(cli_args.file)
+        tree = lex(source)
+        print(
+            _render_file(tree, spans=cli_args.spans, blanks=cli_args.blank_lines),
+            end="",
+        )
+        return 0
 
 
 # -- rendering -------------------------------------------------------------

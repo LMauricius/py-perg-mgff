@@ -1,14 +1,14 @@
 """The subcommands.
 
-Each module here exposes `NAME`, `HELP`, `add_parser(subparsers)` and
-`run(args) -> int`. Adding a subcommand means adding a module and listing it in
-`COMMANDS`.
+Each is a `Command` subclass. Adding a subcommand means adding a class and
+listing an instance of it in `COMMANDS`.
 """
 
-from types import ModuleType
+from .base import Command
+from .check import CheckCommand
+from .generate import GenerateCommand
+from .lex import LexCommand
 
-from . import check, generate, lex
+COMMANDS: list[Command] = [LexCommand(), CheckCommand(), GenerateCommand()]
 
-COMMANDS: list[ModuleType] = [lex, check, generate]
-
-__all__ = ["COMMANDS"]
+__all__ = ["COMMANDS", "Command"]

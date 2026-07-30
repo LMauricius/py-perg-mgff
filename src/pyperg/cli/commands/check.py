@@ -7,19 +7,19 @@ from __future__ import annotations
 
 import argparse
 
-NAME = "check"
-HELP = "validate a grammar without generating anything"
+from .base import Command
 
 
-def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParser:
-    parser = subparsers.add_parser(NAME, help=HELP, description=HELP)
-    parser.add_argument("file", help="the MGFF file to check")
-    return parser
+class CheckCommand(Command):
+    name = "check"
+    help = "validate a grammar without generating anything"
 
+    def add_cli_arguments(self, cli_parser: argparse.ArgumentParser) -> None:
+        cli_parser.add_argument("file", help="the MGFF file to check")
 
-def run(args: argparse.Namespace) -> int:
-    # 1. Lex the file (Part 1).
-    # 2. Parse it into a grammar (Part 2).
-    # 3. Resolve it into a model, reporting every error found.
-    print("check: not implemented yet")
-    return 2
+    def run(self, cli_args: argparse.Namespace) -> int:
+        # 1. Lex the file (Part 1).
+        # 2. Parse it into a grammar (Part 2).
+        # 3. Resolve it into a model, reporting every error found.
+        print("check: not implemented yet")
+        return 2

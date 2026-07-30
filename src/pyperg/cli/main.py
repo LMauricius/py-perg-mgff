@@ -13,27 +13,29 @@ from ..diagnostics.source import SourceFile
 from .commands import COMMANDS
 
 
-def build_parser() -> argparse.ArgumentParser:
-    """The root parser, with one subparser per command module."""
-    parser = argparse.ArgumentParser(
+def build_cli_parser() -> argparse.ArgumentParser:
+    """The root parser, with one subparser per command."""
+    cli_parser = argparse.ArgumentParser(
         prog="pyperg",
         description="Parser Environment Regenerator: generate lexers and parsers from MGFF grammars.",
     )
-    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+    cli_parser.add_argument(
+        "--version", action="version", version=f"%(prog)s {__version__}"
+    )
 
-    subparsers = parser.add_subparsers(dest="command", metavar="COMMAND")
-    for module in COMMANDS:
-        module.add_parser(subparsers).set_defaults(_run=module.run)
-    return parser
+    cli_subparsers = cli_parser.add_subparsers(dest="command", metavar="COMMAND")
+    for command in COMMANDS:
+        command.add_cli_subparser(cli_subparsers)
+    return cli_parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Run a command. Returns the process exit status."""
-    parser = build_parser()
-    args = parser.parse_args(argv)
+    cli_parser = build_cli_parser()
+    args = cli_parser.parse_args(argv)
 
     if not hasattr(args, "_run"):
-        parser.print_help()
+        cli_parser.print_help()
         return 2
 
     try:
