@@ -1,0 +1,222 @@
+"""Rule trees and character sets as regular expressions.
+
+The dialect produced here is the PCRE-compatible one that Qt's
+`QRegularExpression` and the `regex-pcre` engine behind skylighting both read,
+so a Unicode category becomes `\\p{Lu}` and a group is always non-capturing.
+
+Two things a regular expression cannot express are reported rather than faked:
+
+- **Recursion.** A production that reaches itself has no regular form, so
+  `regex_of` returns None and the backend falls back to whatever it uses for
+  rules that nest.
+- **Longest-match choice.** Alternation in a regular expression takes the first
+  option that succeeds, which is MGFF's `/`. For `|`, whose match is the longest,
+  the options are emitted longest fixed prefix first. That is exact whenever the
+  options have fixed lengths — the usual case, `<=` before `<` — and an
+  approximation otherwise.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+
+from ...semantics.charset import CharacterPart, CharacterSet
+from ...semantics.model import Chars, Choice, Node, Production, Repetition, Sequence
+
+#: Characters that need a backslash outside a character class.
+METACHARACTERS = set(r".^$*+?()[]{}|\\")
+
+#: Characters that need a backslash inside a character class.
+CLASS_METACHARACTERS = set(r"^]\-")
+
+Lookup = Callable[[str], Production | None]
+
+
+# -- characters ------------------------------------------------------------
+
+
+def escape_literal(text: str) -> str:
+    """Escape a fixed string so it matches itself."""
+    return "".join(escape_character(char) for char in text)
+
+
+def escape_character(char: str) -> str:
+    """Escape one character for use outside a character class."""
+    if char in METACHARACTERS:
+        return "\\" + char
+    return _control_escape(char) or char
+
+
+def escape_in_class(char: str) -> str:
+    """Escape one character for use inside `[ … ]`."""
+    if char in CLASS_METACHARACTERS:
+        return "\\" + char
+    return _control_escape(char) or char
+
+
+def _control_escape(char: str) -> str | None:
+    """The readable spelling of a control character, or None if it needs none."""
+    known = {"\n": "\\n", "\r": "\\r", "\t": "\\t", "\f": "\\f", "\v": "\\v"}
+    if char in known:
+        return known[char]
+    if ord(char) < 0x20 or ord(char) == 0x7F:
+        return f"\\x{{{ord(char):02x}}}"
+    return None
+
+
+def part_pattern(part: CharacterPart) -> str:
+    """One part of a character set, as it appears inside `[ … ]`."""
+    if part.kind == "character":
+        return escape_in_class(part.value)
+    if part.kind == "range":
+        return f"{escape_in_class(part.value)}-{escape_in_class(part.high)}"
+    return f"\\p{{{part.value}}}"
+
+
+def character_class(characters: CharacterSet) -> str:
+    """A character set as a pattern matching one character.
+
+    A lone character needs no brackets, and neither does a lone category, so the
+    common cases stay readable.
+    """
+    parts = characters.parts
+    if len(parts) == 1:
+        only = parts[0]
+        if only.kind == "character":
+            return escape_character(only.value)
+        if only.kind == "category":
+            return f"\\p{{{only.value}}}"
+    return "[" + "".join(part_pattern(part) for part in parts) + "]"
+
+
+# -- rule trees ------------------------------------------------------------
+
+
+def regex_of(node: Node, lookup: Lookup) -> str | None:
+    """A rule tree as a regular expression, or None when it has no regular form.
+
+    References are inlined through `lookup`; a reference that leads back to
+    itself, or to a name the lookup does not know, gives None.
+    """
+    return _regex(node, lookup, seen=frozenset())
+
+
+def _regex(node: Node, lookup: Lookup, seen: frozenset[str]) -> str | None:
+    if isinstance(node, Chars):
+        return character_class(node.characters)
+
+    if isinstance(node, Sequence):
+        pieces = [_regex(item, lookup, seen) for item in node.items]
+        if any(piece is None for piece in pieces):
+            return None
+        return "".join(_grouped_for_sequence(piece) for piece in pieces)  # type: ignore[arg-type]
+
+    if isinstance(node, Repetition):
+        body = _regex(node.body, lookup, seen)
+        if body is None:
+            return None
+        return _atom(body) + _quantifier(node.minimum, node.maximum)
+
+    if isinstance(node, Choice):
+        options = [_regex(option, lookup, seen) for option in node.options]
+        if any(option is None for option in options):
+            return None
+        return _alternation(options, node.symbol)  # type: ignore[arg-type]
+
+    # A reference: inline the production it names, once.
+    if node.name in seen:
+        return None
+    production = lookup(node.name)
+    if production is None:
+        return None
+    return _regex(production.rule, lookup, seen | {node.name})
+
+
+def _quantifier(minimum: int, maximum: int | None) -> str:
+    """The suffix repeating an atom between `minimum` and `maximum` times."""
+    if (minimum, maximum) == (0, 1):
+        return "?"
+    if (minimum, maximum) == (0, None):
+        return "*"
+    if (minimum, maximum) == (1, None):
+        return "+"
+    if maximum is None:
+        return f"{{{minimum},}}"
+    if minimum == maximum:
+        return f"{{{minimum}}}"
+    return f"{{{minimum},{maximum}}}"
+
+
+def _alternation(options: list[str], symbol: str) -> str:
+    """Options as one alternation, ordered by the choice's preference mode.
+
+    `/` keeps the written order. `|` wants the longest match, which alternation
+    cannot express, so the longest fixed option goes first — enough to make `<=`
+    win over `<`.
+    """
+    ordered = options if symbol == "/" else sorted(options, key=_fixed_length, reverse=True)
+    return "(?:" + "|".join(ordered) + ")"
+
+
+def _fixed_length(pattern: str) -> int:
+    """How long a pattern's match is when it is fixed, else -1.
+
+    Only a run of plain and escaped characters counts; anything with a
+    quantifier or an alternation has no fixed length and keeps its place.
+    """
+    if any(char in pattern for char in "*+?{|"):
+        return -1
+    length, index = 0, 0
+    while index < len(pattern):
+        if pattern[index] == "\\":
+            index += 2
+        elif pattern[index] == "[":
+            closing = pattern.find("]", index + 1)
+            if closing == -1:
+                return -1
+            index = closing + 1
+        else:
+            index += 1
+        length += 1
+    return length
+
+
+def _atom(pattern: str) -> str:
+    """A pattern wrapped so a quantifier applies to the whole of it."""
+    return pattern if _is_atomic(pattern) else f"(?:{pattern})"
+
+
+def _grouped_for_sequence(pattern: str) -> str:
+    """A pattern wrapped only where concatenation would change its meaning.
+
+    `_alternation` already brackets what it builds, so this is about nothing
+    else; the check stays for patterns a caller assembled itself.
+    """
+    return f"(?:{pattern})" if "|" in pattern and not _is_atomic(pattern) else pattern
+
+
+def _is_atomic(pattern: str) -> bool:
+    """Whether a quantifier may follow the pattern without brackets."""
+    if len(pattern) == 1:
+        return True
+    if len(pattern) == 2 and pattern[0] == "\\":
+        return True
+    if pattern.startswith("\\p{") and pattern.endswith("}") and "}" not in pattern[3:-1]:
+        return True
+    # A single bracketed group: balanced, and closing only at the very end.
+    if pattern[0] in "([" and pattern[-1] in ")]":
+        depth, index = 0, 0
+        while index < len(pattern):
+            char = pattern[index]
+            if char == "\\":
+                index += 2
+                continue
+            if char in "([":
+                depth += 1
+            elif char in ")]":
+                depth -= 1
+                if depth == 0 and index != len(pattern) - 1:
+                    return False
+            index += 1
+        return depth == 0
+    return False

@@ -17,6 +17,7 @@ pyperg = "pyperg.cli.main:main"
 # Built-in generator backends. Third-party backends register under the same group.
 [project.entry-points."pyperg.generators"]
 dump = "pyperg.generators.dump:DumpGenerator"
+kate = "pyperg.generators.kate:KateGenerator"
 python = "pyperg.generators.python:PythonGenerator"
 
 [project.optional-dependencies]

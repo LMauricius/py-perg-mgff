@@ -1,0 +1,65 @@
+# A small language, written to exercise the Kate backend.
+
+# How the generated syntax definition describes itself.
+d Language > name(Toy) section(Sources) extensions(*.toy) mimetype(text/x-toy)
+
+# A named list of attributes, reused by the macros below.
+d Highlighted > autoclass
+
+t Lex (
+
+    d Digit  = 0-9
+    d Letter = Letter|_
+    d AlNum  = Letter|Decimal_Number|_
+
+    d Space = ( \_|\t )+
+        > class(Normal)
+
+    # Fixed words, which become a keyword list.
+    d Keyword = l e t
+              | i f
+              | e l s e
+              | w h i l e
+        > class(Keyword)
+
+    d Ident = Letter ( AlNum )*
+        > Highlighted
+
+    d Number = ( Digit )+ ( . ( Digit )+ )?
+        > class(Float Literal)
+
+    d Comment = # ( Letter|Decimal_Number|\_|\t )*
+        > autoclass
+
+    # length-based: the two-character operators win over the one-character ones
+    d Op = < =
+         | > =
+         | = =
+         | +
+         | -
+         | *
+         | =
+        > class(Operator)
+
+    d LParen = \(
+        > class(Normal)
+
+    d RParen = \)
+        > class(Normal)
+
+    # The starting production: the file is a list of tokens, tried in order.
+    d File = ( Space / Comment / Keyword / Number / Ident / Op / LParen / RParen )*
+)
+
+t Parse (
+
+    # The bracketed alternative is what Kate can reproduce: it nests and folds.
+    d Atom = Number
+           / Ident
+           / \( Expr \)
+
+    d Expr = Atom Op Expr
+           / Atom
+
+    d File = ( Expr )*
+)

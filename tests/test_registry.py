@@ -9,7 +9,7 @@ from pyperg.generators.base import Generator
 
 def test_builtin_generators_are_available():
     backends = registry.available()
-    assert {"dump", "python"} <= set(backends)
+    assert {"dump", "kate", "python"} <= set(backends)
     assert all(issubclass(b, Generator) for b in backends.values())
 
 

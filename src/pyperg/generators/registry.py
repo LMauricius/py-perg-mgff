@@ -13,6 +13,7 @@ still finds them.
 
 from __future__ import annotations
 
+import sys
 from importlib import import_module
 from importlib.metadata import entry_points
 
@@ -24,6 +25,7 @@ ENTRY_POINT_GROUP = "pyperg.generators"
 # Fallback for a checkout that has not been installed: name -> "module:attribute".
 BUILTIN_GENERATORS: dict[str, str] = {
     "dump": "pyperg.generators.dump:DumpGenerator",
+    "kate": "pyperg.generators.kate:KateGenerator",
     "python": "pyperg.generators.python:PythonGenerator",
 }
 
@@ -47,7 +49,7 @@ def available() -> dict[str, type[Generator]]:
         try:
             found[entry.name] = entry.load()
         except Exception as err:  # a broken third-party backend must not break the tool
-            raise GeneratorError(f"could not load generator {entry.name!r}: {err}") from err
+            print(f"pyperg: could not load generator {entry.name!r}: {err}", file=sys.stderr)
     return found
 
 

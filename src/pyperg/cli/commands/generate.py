@@ -1,13 +1,15 @@
-"""`pyperg generate`: run a backend over a grammar.
-
-Backend listing works; generation waits on the front end.
-"""
+"""`pyperg generate`: run a backend over a grammar."""
 
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 
+from ...diagnostics.source import SourceFile
 from ...generators import registry
+from ...grammar.parser import parse
+from ...mgff.lexer import lex
+from ...semantics.model import resolve
 from .base import Command
 
 class GenerateCommand(Command):
@@ -39,7 +41,14 @@ class GenerateCommand(Command):
             return 2
 
         # 1. Lex, parse and resolve the file into a model.
+        source = SourceFile.read(cli_args.file)
+        model = resolve(parse(lex(source)), name=source.name)
+
         # 2. Look the backend up in the registry and run it over the model.
+        backend = registry.get(cli_args.generator)
+        written = backend.generate(model, Path(cli_args.out_dir))
+
         # 3. Print the paths written.
-        print("generate: not implemented yet")
-        return 2
+        for path in written:
+            print(path)
+        return 0
