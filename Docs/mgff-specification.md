@@ -176,11 +176,23 @@ any name, including a marker character.
 *Body* is the remaining items of the line: the macro's first
 **alternative**, a sequence matched in order.
 
+A definition may separate with `>` instead of `=`:
+
+```
+d Head > Attributes
+```
+
+The rest of the line is then attributes rather than a body, and the macro has no
+alternatives at all. It matches nothing on its own and exists for the attributes
+it carries, which is how a named list of attributes is written. Further `>` lines
+add to them as usual, and an alternative line may not follow.
+
 Further alternatives follow on lines starting with `/` or `|`, each holding one
 sequence:
 
 - All alternatives of one macro use the same marker; `/` and `|` never mix.
-- A macro with no `/` or `|` line consists of a single alternative.
+- A macro with no `/` or `|` line consists of a single alternative, or of none
+  when its definition has no body.
 - `#` lines between alternatives do not end the macro.
 - `>` lines end the alternatives. Their remaining items are **attributes**
   (calls with or without arguments, e.g. `token`, `skip`, `skip(false)`), whose

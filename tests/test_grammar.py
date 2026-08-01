@@ -80,6 +80,27 @@ def test_a_macro_may_bear_a_marker_name():
 def test_an_empty_body_is_an_empty_option():
     macro = read("d x =").macros["x"]
     assert macro.options == [[]]
+    assert not macro.matches_nothing
+
+
+def test_a_definition_separated_by_a_marker_has_no_options():
+    """`d Head > Attributes` is how a named list of attributes is written."""
+    macro = read("d Common > token skip(false)").macros["Common"]
+    assert macro.options == []
+    assert macro.matches_nothing
+    assert [item.text for item in macro.attributes] == ["token", "skip"]
+
+
+def test_further_attribute_lines_add_to_an_option_less_macro():
+    macro = read("d Common > token\n> string").macros["Common"]
+    assert macro.matches_nothing
+    assert [item.text for item in macro.attributes] == ["token", "string"]
+
+
+def test_an_option_less_macro_takes_no_alternatives():
+    with pytest.raises(SyntaxError_) as excinfo:
+        read("d Common > token\n/ a")
+    assert "may not follow" in excinfo.value.message
 
 
 # -- parameters and signatures ---------------------------------------------
@@ -145,7 +166,8 @@ def test_a_scope_knows_its_qualified_name():
         ("> token", "no macro to attach to"),
         ("d x = a\n/ b\n| c", "same marker"),
         ("d x = a\n> token\n/ b", "may not follow"),
-        ("d x a", "needs `=` right after the head"),
+        ("d x a", "needs `=` or `>` right after the head"),
+        ("d x", "needs `=` or `>` right after the head"),
         ("d", "needs a head"),
         ("t Lex", "written `t Name ( … )`"),
         ("p P_ x (\n)", "written `p Name ( … )`"),

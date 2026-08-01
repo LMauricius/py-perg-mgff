@@ -86,9 +86,11 @@ def _parse_lines(lines: list[Line], scope: Scope) -> None:
                 line.items[0].span,
             )
 
-        # `d Head = Body`: the macro the following lines attach to.
+        # `d Head = Body`: the macro the following lines attach to. A definition
+        # separated by `>` has attributes already, so its alternatives are closed.
         if marker == "d":
-            current, closed = _parse_definition(line, scope), False
+            current = _parse_definition(line, scope)
+            closed = bool(current.attribute_lists)
             scope.define(current)
 
         # `/` and `|`: one more alternative of the current macro.
@@ -117,15 +119,22 @@ def _parse_definition(line: Line, scope: Scope) -> Macro:
     The head is the item after `d`, and the separator is the item right after it,
     which must be exactly `=`. Later `=` items are ordinary, and the head is read
     only after `d`, so a macro may bear any name, including a marker character.
+
+    `d Head > Attributes` separates with `>` instead: the macro has no options at
+    all, and the rest of the line is its first attribute list. Such a macro
+    matches nothing on its own, which is how a named list of attributes is written.
     """
     items = line.items
     if len(items) < 2:
         raise SyntaxError_("a definition needs a head after `d`", items[0].span)
-    if len(items) < 3 or not (items[2].is_bare_text and items[2].text == "="):
-        raise SyntaxError_("a definition needs `=` right after the head", items[1].span)
+    if len(items) < 3 or not (items[2].is_bare_text and items[2].text in ("=", ">")):
+        raise SyntaxError_("a definition needs `=` or `>` right after the head", items[1].span)
 
     macro = make_macro(items[1], scope)
-    macro.options.append(items[3:])
+    if items[2].text == "=":
+        macro.options.append(items[3:])
+    else:
+        macro.attribute_lists.append(items[3:])
     return macro
 
 

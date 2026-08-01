@@ -1,4 +1,4 @@
-"""Grammar semantics: shapes, names, expansion, and the resolved model."""
+"""Built-in constructs (Part 3): item shapes, character sets, and the resolved model."""
 
 from .model import GrammarModel, Production, Target
 

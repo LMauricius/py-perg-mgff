@@ -46,8 +46,12 @@ class Macro:
 
     `options` are the alternatives, in the order they were written; the first is
     the body of the `d` line itself. `choice_symbol` is `/` or `|`, or None while
-    the macro has a single option. `attribute_lists` holds the items of each `>`
-    line unread — what an attribute means is Part 3.
+    the macro has fewer than two options. `attribute_lists` holds the items of
+    each `>` line unread — what an attribute means is Part 3.
+
+    A macro written `d Head > Attributes`, separated by `>` rather than `=`, has
+    no options at all. It matches nothing on its own and exists for the
+    attributes it carries, which is how a named list of attributes is written.
     """
 
     span: Span
@@ -64,6 +68,11 @@ class Macro:
     def attributes(self) -> list[Item]:
         """Every attribute of the macro; the `>` lines accumulate."""
         return [item for line in self.attribute_lists for item in line]
+
+    @property
+    def matches_nothing(self) -> bool:
+        """Whether the macro has no options, so it only carries attributes."""
+        return not self.options
 
 
 @dataclass(slots=True)
