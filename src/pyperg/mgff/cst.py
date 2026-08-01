@@ -2,7 +2,7 @@
 
 The tree records the *shape* of a file and nothing else: how text splits into
 lines, items, and groups. No node here carries grammatical meaning; that is the
-job of `pyperg.mgff.ast`.
+job of `pyperg.grammar`.
 
 Escapes are already resolved, so a `Text` node holds the characters a matcher
 would see, not the spelling they had in the file.

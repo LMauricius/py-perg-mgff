@@ -14,7 +14,7 @@ demand and never exhaustively.
 
 from __future__ import annotations
 
-from ..mgff.ast import Macro
+from ..grammar.scope import Macro
 from ..mgff.cst import Item
 
 

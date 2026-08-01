@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from ..mgff.ast import Macro, Scope
+from ..grammar.scope import Macro, Scope
 
 
 @dataclass(slots=True)

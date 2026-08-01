@@ -11,8 +11,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from ..mgff.ast import Preference
-
 
 @dataclass(slots=True)
 class Production:
@@ -20,7 +18,7 @@ class Production:
 
     name: str
     alternatives: list[object] = field(default_factory=list)  # resolved rule trees
-    preference: Preference = Preference.ORDER
+    choice_symbol: str | None = None  # `/` order-based, `|` length-based, None if single
     attributes: dict[str, list[str]] = field(default_factory=dict)
 
 

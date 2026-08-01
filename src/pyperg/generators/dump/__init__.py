@@ -26,7 +26,7 @@ class DumpGenerator(Generator):
         for target in model.targets:
             lines.append(f"  target {target.name}")
             for production in target.productions.values():
-                marker = production.preference.value
+                marker = production.choice_symbol or "="
                 lines.append(f"    {production.name} ({len(production.alternatives)} alt, {marker})")
                 for attribute in production.attributes:
                     lines.append(f"      > {attribute}")

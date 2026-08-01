@@ -1,0 +1,16 @@
+# Nested prefixes and a mixfix macro, for the Part 2 tests.
+
+d sep(R)by(S) = R (S R)*
+
+p Util_ (
+    d pair = ( Expr , Expr )
+
+    p Inner_ (
+        d list = sep(Expr)by(,)
+    )
+)
+
+t Parse (
+    d Expr = Util_pair
+           / Util_Inner_list
+)

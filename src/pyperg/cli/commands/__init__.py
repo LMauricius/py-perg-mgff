@@ -8,7 +8,8 @@ from .base import Command
 from .check import CheckCommand
 from .generate import GenerateCommand
 from .lex import LexCommand
+from .parse import ParseCommand
 
-COMMANDS: list[Command] = [LexCommand(), CheckCommand(), GenerateCommand()]
+COMMANDS: list[Command] = [LexCommand(), ParseCommand(), CheckCommand(), GenerateCommand()]
 
 __all__ = ["COMMANDS", "Command"]
