@@ -50,11 +50,6 @@ Emit = Callable[[MacroCall, Callable[[Node], str | None]], str | None]
 # -- characters ------------------------------------------------------------
 
 
-def escape_literal(text: str) -> str:
-    """Escape a fixed string so it matches itself."""
-    return "".join(escape_character(char) for char in text)
-
-
 def escape_character(char: str) -> str:
     """Escape one character for use outside a character class."""
     if char in METACHARACTERS:

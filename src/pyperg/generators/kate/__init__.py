@@ -15,7 +15,7 @@ from ..base import Generator
 from ..utils.emit import Emitter
 from ..utils.naming import pascal_case, safe_identifier
 from ..utils.xmlwrite import Element
-from .contexts import LEX_TARGET, PARSE_TARGET, ContextBuilder
+from .contexts import ContextBuilder
 
 #: The attribute-only macro a grammar describes itself with.
 METADATA_MACRO = "Language"
@@ -47,9 +47,6 @@ class KateGenerator(Generator):
         path = out_dir / f"{self.language_name(model)}.xml"
         path.write_text(self.render(model), encoding="utf-8")
         return [path]
-
-    def supports_target(self, target: str) -> bool:
-        return target in (LEX_TARGET, PARSE_TARGET)
 
     # -- naming ------------------------------------------------------------
 

@@ -8,7 +8,6 @@ import pytest
 from pyperg.diagnostics.errors import GeneratorError
 from pyperg.generators.kate import KateGenerator
 from pyperg.generators.kate.styles import autoclass_for, style_for
-from pyperg.mgff.grammar.parser import parse
 from pyperg.mgff.lexing.lexer import lex_text
 from pyperg.mgff.semantics.model import resolve
 

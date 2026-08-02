@@ -28,10 +28,6 @@ class Generator(ABC):
         cannot express.
         """
 
-    def supports_target(self, target: str) -> bool:
-        """Whether the backend handles a given generation phase, e.g. `Lex`."""
-        return True
-
     def macros(self, order: list[Macro]) -> list[Macro]:
         """The definitions in force while the grammar is read, given the default.
 

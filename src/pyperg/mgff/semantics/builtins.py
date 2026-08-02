@@ -43,10 +43,6 @@ REPETITION_MARKERS: dict[str, tuple[int, int | None]] = {
 
 CHOICE_MARKERS: frozenset[str] = frozenset({"|", "/"})  # length-based, order-based
 
-# Attributes the established targets understand. Their meaning is
-# generator-specific, and a backend adds the names it recognises to this base.
-KNOWN_ATTRIBUTES: frozenset[str] = frozenset({"token", "skip", "string"})
-
 
 # -- what the built-in shapes produce --------------------------------------
 #
