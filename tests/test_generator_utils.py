@@ -2,9 +2,9 @@
 
 import pytest
 
-from pyperg.mgff.lexer import lex_text
-from pyperg.semantics.charset import CHARACTER_SET, parse_character_set
-from pyperg.semantics.model import (
+from pyperg.mgff.lexing.lexer import lex_text
+from pyperg.mgff.semantics.charset import CHARACTER_SET, parse_character_set
+from pyperg.mgff.semantics.model import (
     Choice,
     MacroCall,
     Production,

@@ -23,9 +23,9 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from ..diagnostics.errors import SyntaxError_
-from ..diagnostics.span import Position, Span
-from ..mgff.cst import File, Group, Line
+from ...diagnostics.errors import SyntaxError_
+from ...diagnostics.span import Position, Span
+from ..lexing.cst import File, Group, Line
 from .macros import MacroDefinition, ProduceCall
 from .scope import MacroSource, Scope, Target, make_source
 from .shapes import definition_shape
@@ -132,7 +132,9 @@ def _parse_lines(lines: list[Line], scope: Scope, factory: Factory) -> None:
         # `>`: attributes, which end the alternatives.
         elif marker == ">":
             if current is None:
-                raise SyntaxError_("attributes with no macro to attach to", line.items[0].span)
+                raise SyntaxError_(
+                    "attributes with no macro to attach to", line.items[0].span
+                )
             current.attribute_lists.append(rest)
             closed = True
 
@@ -173,7 +175,9 @@ def _parse_definition(line: Line, scope: Scope) -> MacroSource:
     if len(items) < 2:
         raise SyntaxError_("a definition needs a head after `d`", items[0].span)
     if len(items) < 3 or not (items[2].is_bare_text and items[2].text in ("=", ">")):
-        raise SyntaxError_("a definition needs `=` or `>` right after the head", items[1].span)
+        raise SyntaxError_(
+            "a definition needs `=` or `>` right after the head", items[1].span
+        )
 
     macro = make_source(items[1], scope)
     if items[2].text == "=":
@@ -183,7 +187,9 @@ def _parse_definition(line: Line, scope: Scope) -> MacroSource:
     return macro
 
 
-def _add_option(current: MacroSource | None, marker: str, closed: bool, line: Line) -> None:
+def _add_option(
+    current: MacroSource | None, marker: str, closed: bool, line: Line
+) -> None:
     """Attach one `/` or `|` line to the current macro as a further alternative.
 
     All alternatives of one macro use the same marker, and none may follow the
@@ -205,7 +211,9 @@ def _add_option(current: MacroSource | None, marker: str, closed: bool, line: Li
     current.options.append(line.items[1:])
 
 
-def _parse_nested_scope(line: Line, marker: str, parent: Scope, factory: Factory) -> None:
+def _parse_nested_scope(
+    line: Line, marker: str, parent: Scope, factory: Factory
+) -> None:
     """Read a `t Name ( … )` or `p Prefix ( … )` line and its contents.
 
     A prefix hands its names up to the parent once its own lines are read; a

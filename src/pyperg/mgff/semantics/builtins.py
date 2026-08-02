@@ -26,11 +26,11 @@ splices its list in, which is how a named list of attributes is reused.
 
 from __future__ import annotations
 
-from ..diagnostics.errors import SemanticError
+from ...diagnostics.errors import SemanticError
 from ..grammar import shapes
 from ..grammar.macros import Macro, MacroDefinition, Scoped
 from ..grammar.scope import MacroSource
-from ..mgff.cst import Item, render_item
+from ..lexing.cst import Item, render_item
 from .charset import CHARACTER, CHARACTER_SET
 from .nodes import Choice, Node, Repetition
 

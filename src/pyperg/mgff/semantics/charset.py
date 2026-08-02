@@ -24,7 +24,7 @@ from dataclasses import dataclass
 
 from ..grammar.macros import MacroDefinition
 from ..grammar.shapes import MacroShape, shape
-from ..mgff.cst import Item
+from ..lexing.cst import Item
 from .nodes import MacroCall, Node
 
 # -- the recognised Unicode categories ------------------------------------

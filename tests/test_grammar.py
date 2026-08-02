@@ -5,8 +5,8 @@ from pathlib import Path
 import pytest
 
 from pyperg.diagnostics.errors import SemanticError, SyntaxError_
-from pyperg.grammar.parser import parse
-from pyperg.mgff.lexer import lex_text
+from pyperg.mgff.grammar.parser import parse
+from pyperg.mgff.lexing.lexer import lex_text
 
 CALC = Path(__file__).parent / "fixtures" / "calc.mgff"
 PREFIX = Path(__file__).parent / "fixtures" / "prefix.mgff"

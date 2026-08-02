@@ -32,9 +32,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from ..diagnostics.errors import SemanticError
-from ..diagnostics.span import Span
-from ..mgff.cst import Group, Item, signature_of
+from ...diagnostics.errors import SemanticError
+from ...diagnostics.span import Span
+from ..lexing.cst import Group, Item, signature_of
 from .macros import MacroDefinition
 
 __all__ = [
@@ -151,7 +151,9 @@ class Scope:
         """Reject a name already taken in this scope, pointing at the newcomer."""
         taken = self.sources if among is None else among
         if key in taken:
-            raise SemanticError(f"{kind} {key!r} is already defined in this scope", span)
+            raise SemanticError(
+                f"{kind} {key!r} is already defined in this scope", span
+            )
 
     # -- lookup ------------------------------------------------------------
 

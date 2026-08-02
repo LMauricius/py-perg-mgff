@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from ..diagnostics.span import Span
+from ...diagnostics.span import Span
 
 
 @dataclass(slots=True)

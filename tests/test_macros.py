@@ -5,13 +5,12 @@ import re
 import pytest
 
 from pyperg.diagnostics.errors import SemanticError
-from pyperg.grammar.macros import MacroDefinition, Scoped
-from pyperg.grammar.shapes import NAME_CHARACTER, shape
-from pyperg.mgff.cst import Item
-from pyperg.mgff.lexer import lex_text
-from pyperg.semantics.builtins import rule_tree_macros
-from pyperg.semantics.model import MacroCall, Node, Reference, Repetition, resolve
-
+from pyperg.mgff.grammar.macros import MacroDefinition, Scoped
+from pyperg.mgff.grammar.shapes import NAME_CHARACTER, shape
+from pyperg.mgff.lexing.cst import Item
+from pyperg.mgff.lexing.lexer import lex_text
+from pyperg.mgff.semantics.builtins import rule_tree_macros
+from pyperg.mgff.semantics.model import MacroCall, Node, Reference, Repetition, resolve
 
 def capture_args(item: Item, match: re.Match[str]) -> dict[str, object]:
     """What a capture carries: the name in front of the colon, and the rule.

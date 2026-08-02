@@ -5,10 +5,10 @@ from __future__ import annotations
 import argparse
 
 from ...diagnostics.source import SourceFile
-from ...grammar.parser import parse
-from ...grammar.scope import MacroSource, Scope
-from ...mgff.cst import Item, render_item
-from ...mgff.lexer import lex
+from ...mgff.grammar.parser import parse
+from ...mgff.grammar.scope import MacroSource, Scope
+from ...mgff.lexing.cst import Item, render_item
+from ...mgff.lexing.lexer import lex
 from .base import Command
 
 

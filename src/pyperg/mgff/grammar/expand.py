@@ -16,8 +16,8 @@ definition as `R` and `S` and there is no arity to check here.
 
 from __future__ import annotations
 
-from ..diagnostics.span import Span
-from ..mgff.cst import Group, Item, Line, Text, arguments_of
+from ...diagnostics.span import Span
+from ..lexing.cst import Group, Item, Line, Text, arguments_of
 
 __all__ = ["arguments_of", "expand", "substitute", "wrap_in_group"]
 
@@ -30,7 +30,9 @@ def wrap_in_group(items: list[Item], span: Span) -> Item:
     """
     if len(items) == 1:
         return items[0]
-    return Item(span=span, parts=[Group(span=span, lines=[Line(span=span, items=items)])])
+    return Item(
+        span=span, parts=[Group(span=span, lines=[Line(span=span, items=items)])]
+    )
 
 
 def expand(

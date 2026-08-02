@@ -3,8 +3,7 @@
 import pytest
 
 from pyperg.diagnostics.errors import LexError
-from pyperg.mgff.escapes import read_escape
-
+from pyperg.mgff.lexing.escapes import read_escape
 
 def resolve(text: str) -> str:
     """The character an escape denotes, checking that the whole text is consumed."""

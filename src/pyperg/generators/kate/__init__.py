@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ...semantics.model import GrammarModel
+from ...mgff.semantics.model import GrammarModel
 from ..base import Generator
 from ..utils.emit import Emitter
 from ..utils.naming import pascal_case, safe_identifier

@@ -8,10 +8,9 @@ import pytest
 from pyperg.diagnostics.errors import GeneratorError
 from pyperg.generators.kate import KateGenerator
 from pyperg.generators.kate.styles import autoclass_for, style_for
-from pyperg.grammar.parser import parse
-from pyperg.mgff.lexer import lex_text
-from pyperg.semantics.model import resolve
-
+from pyperg.mgff.grammar.parser import parse
+from pyperg.mgff.lexing.lexer import lex_text
+from pyperg.mgff.semantics.model import resolve
 
 def read_fixture(name: str) -> str:
     return (Path(__file__).parent / "fixtures" / name).read_text(encoding="utf-8")

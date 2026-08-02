@@ -5,13 +5,13 @@ from pathlib import Path
 import pytest
 
 from pyperg.diagnostics.errors import SemanticError
-from pyperg.grammar.expand import substitute
-from pyperg.grammar.macros import Scoped
-from pyperg.mgff.cst import render_item, signature_of
-from pyperg.mgff.lexer import lex_text
-from pyperg.semantics.builtins import rule_tree_macros
-from pyperg.semantics.charset import is_category_name, parse_character_set
-from pyperg.semantics.model import (
+from pyperg.mgff.grammar.expand import substitute
+from pyperg.mgff.grammar.macros import Scoped
+from pyperg.mgff.lexing.cst import render_item, signature_of
+from pyperg.mgff.lexing.lexer import lex_text
+from pyperg.mgff.semantics.builtins import rule_tree_macros
+from pyperg.mgff.semantics.charset import is_category_name, parse_character_set
+from pyperg.mgff.semantics.model import (
     Choice,
     MacroCall,
     Reference,
@@ -19,7 +19,6 @@ from pyperg.semantics.model import (
     Sequence,
     resolve,
 )
-
 
 def read_fixture(name: str) -> str:
     return (Path(__file__).parent / "fixtures" / name).read_text(encoding="utf-8")

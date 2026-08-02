@@ -7,9 +7,9 @@ from pathlib import Path
 
 from ...diagnostics.source import SourceFile
 from ...generators import registry
-from ...mgff.lexer import lex
-from ...semantics.builtins import rule_tree_macros
-from ...semantics.model import resolve
+from ...mgff.lexing.lexer import lex
+from ...mgff.semantics.builtins import rule_tree_macros
+from ...mgff.semantics.model import resolve
 from .base import Command
 
 class GenerateCommand(Command):

@@ -8,7 +8,7 @@ say — rejects the cycles and inlines the rest.
 
 from __future__ import annotations
 
-from ...semantics.model import Production
+from ...mgff.semantics.model import Production
 from .walk import references
 
 

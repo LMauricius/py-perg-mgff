@@ -18,8 +18,8 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 
-from ...semantics.charset import character_set_of
-from ...semantics.model import (
+from ...mgff.semantics.charset import character_set_of
+from ...mgff.semantics.model import (
     Choice,
     MacroCall,
     Node,
@@ -28,7 +28,6 @@ from ...semantics.model import (
     Repetition,
     Sequence,
 )
-
 
 def walk(node: Node) -> Iterator[Node]:
     """Every node of a tree, the node itself first."""

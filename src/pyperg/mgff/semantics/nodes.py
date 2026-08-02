@@ -20,7 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from ..grammar.macros import MacroDefinition
-from ..mgff.cst import Item
+from ..lexing.cst import Item
 
 
 @dataclass(slots=True)

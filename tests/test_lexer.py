@@ -5,8 +5,8 @@ from pathlib import Path
 import pytest
 
 from pyperg.diagnostics.errors import LexError
-from pyperg.mgff.cst import Group, Text, render_item
-from pyperg.mgff.lexer import lex_text
+from pyperg.mgff.lexing.cst import Group, Text, render_item
+from pyperg.mgff.lexing.lexer import lex_text
 
 FIXTURE = Path(__file__).parent / "fixtures" / "calc.mgff"
 

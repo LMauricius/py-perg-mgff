@@ -15,6 +15,6 @@ __version__ = "0.0.1"
 
 from .diagnostics.errors import PyPergError
 from .diagnostics.source import SourceFile
-from .mgff.lexer import lex, lex_text
+from .mgff.lexing.lexer import lex, lex_text
 
 __all__ = ["PyPergError", "SourceFile", "__version__", "lex", "lex_text"]

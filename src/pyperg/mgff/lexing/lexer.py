@@ -18,9 +18,9 @@ every group.
 
 from __future__ import annotations
 
-from ..diagnostics.errors import LexError
-from ..diagnostics.source import SourceFile
-from ..diagnostics.span import Span
+from ...diagnostics.errors import LexError
+from ...diagnostics.source import SourceFile
+from ...diagnostics.span import Span
 from .cst import File, Group, Item, Line, Text
 from .escapes import read_escape
 
@@ -105,11 +105,15 @@ class _Lexer:
 
             if self._at_end():
                 if in_group:
-                    raise self._error("unterminated group opened here", open_at, open_at + 1)
+                    raise self._error(
+                        "unterminated group opened here", open_at, open_at + 1
+                    )
                 return lines
 
             # Unreachable: _line only stops at ")", NL or end of input.
-            raise self._error(f"unexpected character {self._peek()!r}", self.pos, self.pos + 1)
+            raise self._error(
+                f"unexpected character {self._peek()!r}", self.pos, self.pos + 1
+            )
 
     def _line(self) -> Line:
         """`line = WS* (item (WS+ item)*)? WS*`, stopping before NL or `)`."""
@@ -171,7 +175,9 @@ class _Lexer:
                     resolved, self.pos = read_escape(self.text, self.pos)
                 except LexError as err:
                     # The escape reader has no offsets; attach them here.
-                    raise self._error(err.message, start=self.pos, end=self.pos + 2) from None
+                    raise self._error(
+                        err.message, start=self.pos, end=self.pos + 2
+                    ) from None
                 chars.append(resolved)
             elif char in WS or char in "()\r\n":
                 break

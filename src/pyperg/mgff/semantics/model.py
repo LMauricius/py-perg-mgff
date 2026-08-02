@@ -25,16 +25,24 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from ..diagnostics.errors import SemanticError
-from ..diagnostics.span import Span
+from ...diagnostics.errors import SemanticError
+from ...diagnostics.span import Span
 from ..grammar.expand import expand
 from ..grammar.macros import Macro, ProduceCall, Scoped
 from ..grammar.parser import parse
 from ..grammar.scope import MacroSource, Scope, Target as ScopeTarget, signature_of
-from ..mgff.cst import File, Group, Item, group_items, render_item
+from ..lexing.cst import File, Group, Item, group_items, render_item
 from .builtins import collect_attributes, rule_tree_macros
+
 # The node kinds are re-exported: a backend reads the model through this module.
-from .nodes import Choice, MacroCall, Node, Reference, Repetition, Sequence  # noqa: F401
+from .nodes import (
+    Choice,
+    MacroCall,
+    Node,
+    Reference,
+    Repetition,
+    Sequence,
+)  # noqa: F401
 
 #: Targets known to match textual characters throughout, so a rule of theirs is
 #: never anything but characters. Other targets may still spell a terminal as a
@@ -56,7 +64,9 @@ class Production:
 
     name: str
     alternatives: list[Node] = field(default_factory=list)
-    choice_symbol: str | None = None  # `/` order-based, `|` length-based, None if single
+    choice_symbol: str | None = (
+        None  # `/` order-based, `|` length-based, None if single
+    )
     attributes: dict[str, list[str]] = field(default_factory=dict)
     span: Span | None = None
     #: The target the macro was written in, `""` when it is shared by all of
@@ -242,7 +252,8 @@ class _Resolver:
             production.choice_symbol = source.choice_symbol
             production.attributes = collect_attributes(source)
             production.alternatives = [
-                self.sequence(option, source.scope, depth=0) for option in source.options
+                self.sequence(option, source.scope, depth=0)
+                for option in source.options
             ]
 
     def production_name(self, source: MacroSource) -> str:

@@ -24,8 +24,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from ...semantics.charset import CharacterPart, CharacterSet, character_set_of
-from ...semantics.model import (
+from ...mgff.semantics.charset import CharacterPart, CharacterSet, character_set_of
+from ...mgff.semantics.model import (
     Choice,
     MacroCall,
     Node,

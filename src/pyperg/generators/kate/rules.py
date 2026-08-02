@@ -31,8 +31,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ...diagnostics.errors import GeneratorError
-from ...semantics.charset import character_set_of
-from ...semantics.model import Node, Production, Repetition, Sequence
+from ...mgff.semantics.charset import character_set_of
+from ...mgff.semantics.model import Node, Production, Repetition, Sequence
 from ..utils.naming import NameAllocator, safe_identifier
 from ..utils.regex import regex_of
 from ..utils.walk import flatten, fuse_literals, literal_of

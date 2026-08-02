@@ -5,9 +5,8 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from pathlib import Path
 
-from ..grammar.macros import Macro
-from ..semantics.model import GrammarModel
-
+from ..mgff.grammar.macros import Macro
+from ..mgff.semantics.model import GrammarModel
 
 class Generator(ABC):
     """A backend turning a resolved grammar into output files.

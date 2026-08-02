@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import unicodedata
 
-from ..diagnostics.errors import LexError
+from ...diagnostics.errors import LexError
 
 # Single-character escapes. `\_` (space) is particular to MGFF.
 SIMPLE_ESCAPES: dict[str, str] = {
@@ -42,7 +42,9 @@ _NAME_CHARS = set("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_")
 def _code_point(value: int) -> str:
     """Turn a numeric escape's value into a character, rejecting the invalid range."""
     if value > 0x10FFFF:
-        raise LexError(f"escape denotes U+{value:X}, above the maximum code point U+10FFFF")
+        raise LexError(
+            f"escape denotes U+{value:X}, above the maximum code point U+10FFFF"
+        )
     if 0xD800 <= value <= 0xDFFF:
         raise LexError(f"escape denotes the surrogate code point U+{value:04X}")
     return chr(value)

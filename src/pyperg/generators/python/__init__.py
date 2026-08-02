@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ...semantics.model import GrammarModel
+from ...mgff.semantics.model import GrammarModel
 from ..base import Generator
 
 

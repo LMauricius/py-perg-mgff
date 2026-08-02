@@ -43,7 +43,7 @@ from __future__ import annotations
 import sys
 
 from ...diagnostics.errors import GeneratorError
-from ...semantics.model import GrammarModel, Production, Target
+from ...mgff.semantics.model import GrammarModel, Production, Target
 from ..utils.graph import reachable_from, reference_graph
 from ..utils.walk import flatten, fuse_literals, references, single_character
 from ..utils.xmlwrite import Element

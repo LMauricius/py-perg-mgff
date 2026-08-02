@@ -26,7 +26,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from ..mgff.cst import Item, arguments_of
+from ..lexing.cst import Item, arguments_of
 
 #: Reads a matched call: the item, and the match of its shape's pattern. The
 #: keys of the result are the parameter names a `produce_call` is written with.
@@ -88,9 +88,7 @@ def _no_args(item: Item, match: re.Match[str]) -> dict[str, object]:
 SUBGROUP = shape("subgroup", r"\(\)", _subgroup_args)
 REPETITION = shape("repetition", r"\(\)(?P<marker>[+*?])", _repetition_args)
 #: The separators must all be the same one, which is what the backreference says.
-CHOICE = shape(
-    "choice", r"\(\)(?P<symbol>[|/])\(\)(?:(?P=symbol)\(\))*", _choice_args
-)
+CHOICE = shape("choice", r"\(\)(?P<symbol>[|/])\(\)(?:(?P=symbol)\(\))*", _choice_args)
 
 #: The two shapes a `d` definition is looked up by. They match any name, and the
 #: definition found under it carries the shape that reads the call's arguments.
@@ -113,5 +111,7 @@ def definition_shape(signature: str, parameters: list[str]) -> MacroShape:
         return dict(zip(parameters, arguments_of(item)))
 
     return MacroShape(
-        name=signature, pattern=re.compile(re.escape(signature)), extract_args=extract_args
+        name=signature,
+        pattern=re.compile(re.escape(signature)),
+        extract_args=extract_args,
     )

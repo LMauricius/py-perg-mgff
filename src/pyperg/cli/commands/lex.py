@@ -5,8 +5,8 @@ from __future__ import annotations
 import argparse
 
 from ...diagnostics.source import SourceFile
-from ...mgff.cst import File, Group, Item, Line, Text, render_item
-from ...mgff.lexer import lex
+from ...mgff.lexing.cst import File, Group, Item, Line, Text, render_item
+from ...mgff.lexing.lexer import lex
 from .base import Command
 
 class LexCommand(Command):
