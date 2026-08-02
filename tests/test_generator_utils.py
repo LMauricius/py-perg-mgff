@@ -2,8 +2,16 @@
 
 import pytest
 
-from pyperg.semantics.charset import parse_character_set
-from pyperg.semantics.model import Chars, Choice, Production, Reference, Repetition, Sequence
+from pyperg.mgff.lexer import lex_text
+from pyperg.semantics.charset import CHARACTER_SET, parse_character_set
+from pyperg.semantics.model import (
+    Choice,
+    MacroCall,
+    Production,
+    Reference,
+    Repetition,
+    Sequence,
+)
 from pyperg.generators.utils.emit import Emitter
 from pyperg.generators.utils.graph import (
     cycles,
@@ -18,10 +26,11 @@ from pyperg.generators.utils.walk import fuse_literals, literal_of, nullable, re
 from pyperg.generators.utils.xmlwrite import Element, escape_attribute
 
 
-def chars(text: str) -> Chars:
-    characters = parse_character_set(text)
-    assert characters is not None
-    return Chars(characters)
+def chars(text: str) -> MacroCall:
+    """A character-set node, built from the item that spells the set."""
+    item = lex_text(text).lines[0].items[0]
+    assert parse_character_set(item.text) is not None
+    return MacroCall(macro=CHARACTER_SET, item=item)
 
 
 def production(name: str, *alternatives) -> Production:

@@ -6,14 +6,26 @@ category, given as a two-letter abbreviation (`Lu`, `Nd`) or in long form
 (`Uppercase_Letter`). The one-letter abbreviations are unavailable, since a
 single character is already a character part.
 
+Character sets reach the resolver as two macros, `CHARACTER_SET` for a set of
+several parts and `CHARACTER` for one of a single part. They have the same body
+and differ only in where they sit in the order, which is the whole of why
+`a-z|A-Z` is a set even where a production bears that name while a lone `Letter`
+is not.
+
 The category table below is the one place the recognised categories are named;
 the backends import it from here rather than keeping tables of their own.
 """
 
 from __future__ import annotations
 
+import re
 import unicodedata
 from dataclasses import dataclass
+
+from ..grammar.macros import MacroDefinition
+from ..grammar.shapes import MacroShape, shape
+from ..mgff.cst import Item
+from .nodes import MacroCall, Node
 
 # -- the recognised Unicode categories ------------------------------------
 #
@@ -168,3 +180,59 @@ def parse_character_set(text: str) -> CharacterSet | None:
             return None
         parts.append(part)
     return CharacterSet(parts)
+
+
+# -- the macros ------------------------------------------------------------
+
+#: One character as a signature spells it: escaped, or a plain character that is
+#: neither a bracket nor the separator. Brackets are always escaped in a
+#: signature, so an unescaped one can only be a group.
+_CHARACTER = r"(?:\\.|[^\\()|])"
+
+#: A category, longest name first, so `Lu` cannot win over `Lu…` — the names
+#: come from the table above, which is the only place they are written down.
+_CATEGORY = "|".join(
+    re.escape(name) for name in sorted(CATEGORY_NAMES, key=len, reverse=True)
+)
+
+#: One part: a range, a category, or a single character, tried in that order.
+_PART = rf"(?:{_CHARACTER}-{_CHARACTER}|{_CATEGORY}|{_CHARACTER})"
+
+#: A set of two or more parts, and a set of exactly one. The lone separator is
+#: the separator character itself rather than an empty set, so it is spelled out.
+CHARACTER_SET_PATTERN = rf"{_PART}(?:\|{_PART})+"
+CHARACTER_PATTERN = rf"(?:{_PART}|\|)"
+
+
+def _set_args(item: Item, match: re.Match[str]) -> dict[str, object]:
+    """What a character set carries: the text that spells it."""
+    return {"item": item, "text": item.text}
+
+
+def _character_set(item: Item, text: str) -> Node | None:
+    """A character set as a node, declining when the text is no valid set.
+
+    The pattern is a shape and cannot compare the ends of a range, so `9-0`
+    reaches this point and is declined here. It goes on to be read as a name, and
+    is reported as an unknown one.
+    """
+    if parse_character_set(text) is None:
+        return None
+    return MacroCall(macro=CHARACTER_SET, item=item)
+
+
+#: A set of several parts outranks a production of the same name; a set of one
+#: part yields to it. That is the whole difference between the two.
+SET_SHAPE: MacroShape = shape("character-set", CHARACTER_SET_PATTERN, _set_args)
+CHARACTER_SHAPE: MacroShape = shape("character", CHARACTER_PATTERN, _set_args)
+
+CHARACTER_SET = MacroDefinition(shape=SET_SHAPE, produce_call=_character_set)
+CHARACTER = MacroDefinition(shape=CHARACTER_SHAPE, produce_call=_character_set)
+
+
+def character_set_of(node: Node) -> CharacterSet | None:
+    """The set a node matches one character from, or None for any other node."""
+    # Both macros build the same node, so one identity answers for either.
+    if isinstance(node, MacroCall) and node.macro is CHARACTER_SET:
+        return parse_character_set(node.item.text)
+    return None

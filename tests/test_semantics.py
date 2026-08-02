@@ -1,23 +1,24 @@
-"""Part 3: item shapes, character sets, expansion and the resolved model."""
+"""Part 3: pattern macros, character sets, expansion and the resolved model."""
 
 from pathlib import Path
 
 import pytest
 
 from pyperg.diagnostics.errors import SemanticError
-from pyperg.grammar.expand import expand_call
-from pyperg.grammar.parser import parse
+from pyperg.grammar.expand import substitute
+from pyperg.grammar.macros import Scoped
+from pyperg.mgff.cst import render_item, signature_of
 from pyperg.mgff.lexer import lex_text
+from pyperg.semantics.builtins import rule_tree_macros
 from pyperg.semantics.charset import is_category_name, parse_character_set
 from pyperg.semantics.model import (
-    Chars,
     Choice,
+    MacroCall,
     Reference,
     Repetition,
     Sequence,
     resolve,
 )
-from pyperg.semantics.shapes import Shape, classify
 
 
 def read_fixture(name: str) -> str:
@@ -25,7 +26,7 @@ def read_fixture(name: str) -> str:
 
 
 def model_of(text: str, name: str = "<test>"):
-    return resolve(parse(lex_text(text, name)), name)
+    return resolve(lex_text(text, name), name)
 
 
 def first_item(text: str):
@@ -79,40 +80,67 @@ def test_a_range_matches_inclusively():
     assert not characters.matches("a")
 
 
-# -- item shapes ------------------------------------------------------------
+# -- pattern macros ---------------------------------------------------------
+
+
+def shapes_matching(text: str) -> list[str]:
+    """The macros whose shape fits an item, in the order they are tried.
+
+    A `Scoped` place in the order is named for what it consults, since which
+    definition is found there is a question for the scope.
+    """
+    signature = signature_of(first_item(text))
+    return [
+        macro.shape.name
+        for macro in rule_tree_macros()
+        if macro.shape.match(signature) is not None
+    ]
 
 
 @pytest.mark.parametrize(
     "text, shape",
     [
-        ("( a b )", Shape.SUBGROUP),
-        ("( Digit )+", Shape.REPETITION),
-        ("( Digit )*", Shape.REPETITION),
-        ("( Digit )?", Shape.REPETITION),
-        ("(+)/(-)", Shape.CHOICE),
-        ("(a)|(b)|(c)", Shape.CHOICE),
-        ("sep(x)by(y)", Shape.CALL_WITH_ARGUMENTS),
-        ("a-z|A-Z", Shape.CHARACTER_SET),
-        ("Digit", Shape.CALL),
+        ("( a b )", "subgroup"),
+        ("( Digit )+", "repetition"),
+        ("( Digit )*", "repetition"),
+        ("( Digit )?", "repetition"),
+        ("(+)/(-)", "choice"),
+        ("(a)|(b)|(c)", "choice"),
+        ("sep(x)by(y)", "name-with-arguments"),
+        ("a-z|A-Z", "character-set"),
+        ("Digit", "name"),
     ],
 )
-def test_an_item_is_read_by_its_shape(text, shape):
-    assert classify(first_item(text), character_sets_allowed=True) is shape
+def test_an_item_is_read_by_the_first_macro_its_shape_fits(text, shape):
+    assert shapes_matching(text)[0] == shape
 
 
 def test_a_multi_part_set_outranks_a_production_of_the_same_name():
-    item = first_item("a-z|A-Z")
-    assert classify(item, True, resolves=lambda name: True) is Shape.CHARACTER_SET
+    # Nothing is tried before it, so no definition of `a-z|A-Z` can win.
+    assert shapes_matching("a-z|A-Z")[0] == "character-set"
 
 
 def test_a_single_part_set_yields_to_a_production_of_the_same_name():
-    item = first_item("Letter")
-    assert classify(item, True, resolves=lambda name: True) is Shape.CALL
-    assert classify(item, True, resolves=lambda name: False) is Shape.CHARACTER_SET
+    # The set is reached only when the scope has no definition of that name.
+    assert shapes_matching("Letter") == ["name", "character"]
+
+
+def test_the_grammars_own_definitions_are_consulted_at_two_places():
+    order = rule_tree_macros()
+    scoped = [macro.shape.name for macro in order if isinstance(macro, Scoped)]
+    assert scoped == ["name-with-arguments", "name"]
+
+
+def test_a_signature_escapes_text_that_spells_a_group():
+    # `\(\)` is two characters, and must not read as an empty group.
+    assert signature_of(first_item(r"\(\)")) == r"\(\)"
+    assert shapes_matching(r"\(\)")[0] == "name"
 
 
 def test_a_choice_may_not_mix_its_separators():
-    assert classify(first_item("(a)|(b)/(c)"), True) is Shape.CALL_WITH_ARGUMENTS
+    assert "choice" not in shapes_matching("(a)|(b)/(c)")
+    with pytest.raises(SemanticError, match="unknown name"):
+        model_of("t Lex (\n d Sign = (a)|(b)/(c)\n)")
 
 
 # -- resolution -------------------------------------------------------------
@@ -136,7 +164,7 @@ def test_an_inline_choice_keeps_its_preference_mode():
     model = model_of("t Lex (\n d Sign = (+)/(-)\n)")
     rule = model.target("Lex").productions["Sign"].rule
     assert isinstance(rule, Choice) and rule.symbol == "/"
-    assert all(isinstance(option, Chars) for option in rule.options)
+    assert all(isinstance(option, MacroCall) for option in rule.options)
 
 
 def test_alternatives_are_kept_in_order_with_their_marker():
@@ -163,7 +191,7 @@ def test_a_mixfix_call_is_expanded_in_place():
     rule = model_of(text).target("Parse").productions["List"].rule
     # a ( , a )*
     assert isinstance(rule, Sequence)
-    assert isinstance(rule.items[0], Chars)
+    assert isinstance(rule.items[0], MacroCall)
     assert isinstance(rule.items[1], Repetition)
 
 
@@ -175,11 +203,13 @@ def test_a_call_of_the_wrong_shape_finds_no_macro():
         model_of(text)
 
 
-def test_expanding_with_the_wrong_number_of_arguments_is_reported():
-    scope = parse(lex_text("d sep(R)by(S) = R (S R)*"))
-    macro = scope.lookup("sep()by()")
-    with pytest.raises(SemanticError, match="takes 2 argument"):
-        expand_call(macro, [[]])
+def test_a_parameter_is_substituted_by_its_argument():
+    # The shape binds a call's arguments to the parameters, so expansion is
+    # substitution alone and has no arity left to check.
+    body = lex_text("R (S R)*").lines[0].items
+    argument = lex_text("a").lines[0].items
+    expanded = substitute(body, {"R": argument})
+    assert " ".join(render_item(item) for item in expanded) == "a (S a)*"
 
 
 def test_an_unknown_name_is_reported():

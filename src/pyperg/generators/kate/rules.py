@@ -31,7 +31,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ...diagnostics.errors import GeneratorError
-from ...semantics.model import Chars, Node, Production, Repetition, Sequence
+from ...semantics.charset import character_set_of
+from ...semantics.model import Node, Production, Repetition, Sequence
 from ..utils.naming import NameAllocator, safe_identifier
 from ..utils.regex import regex_of
 from ..utils.walk import flatten, fuse_literals, literal_of
@@ -168,12 +169,12 @@ class RuleBuilder:
         """`DetectSpaces` for a run of whitespace of any length."""
         if not isinstance(node, Repetition) or node.minimum > 1:
             return None
-        body = node.body
-        if not isinstance(body, Chars):
+        characters = character_set_of(node.body)
+        if characters is None:
             return None
         if not all(
             part.kind == "character" and part.value in WHITESPACE
-            for part in body.characters.parts
+            for part in characters.parts
         ):
             return None
         return where.applied_to("DetectSpaces")
@@ -192,9 +193,10 @@ class RuleBuilder:
 
     def any_char_rule(self, node: Node, where: RuleContext) -> Element | None:
         """`AnyChar` for one character out of a fixed handful."""
-        if not isinstance(node, Chars):
+        characters = character_set_of(node)
+        if characters is None:
             return None
-        parts = node.characters.parts
+        parts = characters.parts
         if len(parts) < 2 or not all(part.kind == "character" for part in parts):
             return None
         return where.applied_to("AnyChar", String="".join(part.value for part in parts))

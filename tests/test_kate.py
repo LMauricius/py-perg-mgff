@@ -18,7 +18,7 @@ def read_fixture(name: str) -> str:
 
 
 def render(text: str, name: str = "<test>") -> str:
-    return KateGenerator().render(resolve(parse(lex_text(text, name)), name))
+    return KateGenerator().render(resolve(lex_text(text, name), name))
 
 
 def tree_of(text: str) -> ElementTree.Element:
@@ -241,7 +241,7 @@ def test_an_ignored_target_is_reported_on_stderr(capsys):
 
 
 def test_generate_writes_one_file_named_after_the_language(tmp_path):
-    model = resolve(parse(lex_text(read_fixture("kate.mgff"), "kate.mgff")), "kate.mgff")
+    model = resolve(lex_text(read_fixture("kate.mgff"), "kate.mgff"), "kate.mgff")
     written = KateGenerator().generate(model, tmp_path)
     assert written == [tmp_path / "Toy.xml"]
     assert written[0].read_text(encoding="utf-8").startswith("<?xml")

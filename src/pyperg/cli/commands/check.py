@@ -16,7 +16,7 @@ from .base import Command
 
 def _count(scope: Scope) -> tuple[int, int]:
     """The macros and targets of a scope tree, counting each definition once."""
-    macros = sum(1 for macro in scope.macros.values() if macro.scope is scope)
+    macros = sum(1 for macro in scope.sources.values() if macro.scope is scope)
     targets = len(scope.targets)
     for child in list(scope.subscopes.values()) + list(scope.targets.values()):
         # Skip what a prefix scope handed up; it is counted where it was defined.

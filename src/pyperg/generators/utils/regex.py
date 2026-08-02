@@ -14,14 +14,25 @@ Two things a regular expression cannot express are reported rather than faked:
   the options are emitted longest fixed prefix first. That is exact whenever the
   options have fixed lengths — the usual case, `<=` before `<` — and an
   approximation otherwise.
+
+A `MacroCall` of any macro but a character set belongs to whoever defined that
+macro, so `regex_of` takes an optional `emit` for those and returns None without
+one.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
 
-from ...semantics.charset import CharacterPart, CharacterSet
-from ...semantics.model import Chars, Choice, Node, Production, Repetition, Sequence
+from ...semantics.charset import CharacterPart, CharacterSet, character_set_of
+from ...semantics.model import (
+    Choice,
+    MacroCall,
+    Node,
+    Production,
+    Repetition,
+    Sequence,
+)
 
 #: Characters that need a backslash outside a character class.
 METACHARACTERS = set(r".^$*+?()[]{}|\\")
@@ -30,6 +41,10 @@ METACHARACTERS = set(r".^$*+?()[]{}|\\")
 CLASS_METACHARACTERS = set(r"^]\-")
 
 Lookup = Callable[[str], Production | None]
+
+#: Emits a macro call the backend registered itself, given the call and a way to
+#: turn its arguments into patterns. None means "no regular form".
+Emit = Callable[[MacroCall, Callable[[Node], str | None]], str | None]
 
 
 # -- characters ------------------------------------------------------------
@@ -92,33 +107,39 @@ def character_class(characters: CharacterSet) -> str:
 # -- rule trees ------------------------------------------------------------
 
 
-def regex_of(node: Node, lookup: Lookup) -> str | None:
+def regex_of(node: Node, lookup: Lookup, emit: Emit | None = None) -> str | None:
     """A rule tree as a regular expression, or None when it has no regular form.
 
     References are inlined through `lookup`; a reference that leads back to
-    itself, or to a name the lookup does not know, gives None.
+    itself, or to a name the lookup does not know, gives None. `emit` handles the
+    macro calls this module knows nothing of.
     """
-    return _regex(node, lookup, seen=frozenset())
+    return _regex(node, lookup, emit, seen=frozenset())
 
 
-def _regex(node: Node, lookup: Lookup, seen: frozenset[str]) -> str | None:
-    if isinstance(node, Chars):
-        return character_class(node.characters)
+def _regex(node: Node, lookup: Lookup, emit: Emit | None, seen: frozenset[str]) -> str | None:
+    if isinstance(node, MacroCall):
+        characters = character_set_of(node)
+        if characters is not None:
+            return character_class(characters)
+        if emit is None:
+            return None
+        return emit(node, lambda inner: _regex(inner, lookup, emit, seen))
 
     if isinstance(node, Sequence):
-        pieces = [_regex(item, lookup, seen) for item in node.items]
+        pieces = [_regex(item, lookup, emit, seen) for item in node.items]
         if any(piece is None for piece in pieces):
             return None
         return "".join(_grouped_for_sequence(piece) for piece in pieces)  # type: ignore[arg-type]
 
     if isinstance(node, Repetition):
-        body = _regex(node.body, lookup, seen)
+        body = _regex(node.body, lookup, emit, seen)
         if body is None:
             return None
         return _atom(body) + _quantifier(node.minimum, node.maximum)
 
     if isinstance(node, Choice):
-        options = [_regex(option, lookup, seen) for option in node.options]
+        options = [_regex(option, lookup, emit, seen) for option in node.options]
         if any(option is None for option in options):
             return None
         return _alternation(options, node.symbol)  # type: ignore[arg-type]
@@ -129,7 +150,7 @@ def _regex(node: Node, lookup: Lookup, seen: frozenset[str]) -> str | None:
     production = lookup(node.name)
     if production is None:
         return None
-    return _regex(production.rule, lookup, seen | {node.name})
+    return _regex(production.rule, lookup, emit, seen | {node.name})
 
 
 def _quantifier(minimum: int, maximum: int | None) -> str:

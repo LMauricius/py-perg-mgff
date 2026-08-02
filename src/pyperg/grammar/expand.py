@@ -8,25 +8,18 @@ so its grouping survives.
 
 Macros may be self-referencing or mutually recursive, so calls are expanded on
 demand and never exhaustively.
+
+The arguments arrive already bound to their parameters: a definition's shape
+reads a call by the head it was written with, so `sep(a)by(,)` reaches the
+definition as `R` and `S` and there is no arity to check here.
 """
 
 from __future__ import annotations
 
-from ..diagnostics.errors import SemanticError
 from ..diagnostics.span import Span
-from ..mgff.cst import Group, Item, Line, Text
-from .scope import Macro
+from ..mgff.cst import Group, Item, Line, Text, arguments_of
 
-
-def arguments_of(item: Item) -> list[list[Item]]:
-    """The argument of each group of a call, as a sequence of items.
-
-    A group's lines are joined, since the line breaks inside a group are layout.
-    """
-    return [
-        [argument for line in group.lines for argument in line.items]
-        for group in item.groups
-    ]
+__all__ = ["arguments_of", "expand", "substitute", "wrap_in_group"]
 
 
 def wrap_in_group(items: list[Item], span: Span) -> Item:
@@ -40,20 +33,14 @@ def wrap_in_group(items: list[Item], span: Span) -> Item:
     return Item(span=span, parts=[Group(span=span, lines=[Line(span=span, items=items)])])
 
 
-def expand_call(macro: Macro, arguments: list[list[Item]]) -> list[list[Item]]:
-    """Expand one call into the macro's alternatives, with arguments substituted.
+def expand(
+    options: list[list[Item]], bindings: dict[str, list[Item]]
+) -> list[list[Item]]:
+    """Expand a definition's alternatives, with the call's arguments substituted.
 
-    Returns one item sequence per alternative. Raises `SemanticError` when the
-    argument count does not match the macro's parameters.
+    Returns one item sequence per alternative.
     """
-    if len(arguments) != len(macro.parameters):
-        raise SemanticError(
-            f"macro {macro.signature!r} takes {len(macro.parameters)} argument(s), "
-            f"{len(arguments)} given",
-            macro.span,
-        )
-    bindings = dict(zip(macro.parameters, arguments))
-    return [substitute(option, bindings) for option in macro.options]
+    return [substitute(option, bindings) for option in options]
 
 
 def substitute(items: list[Item], bindings: dict[str, list[Item]]) -> list[Item]:

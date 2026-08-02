@@ -1,9 +1,9 @@
-"""Built-in constructs (Part 3): item shapes, character sets, and the resolved model."""
+"""Built-in constructs (Part 3): character sets, built-in macros, and the resolved model."""
 
 from .model import (
-    Chars,
     Choice,
     GrammarModel,
+    MacroCall,
     Node,
     Production,
     Reference,
@@ -12,16 +12,18 @@ from .model import (
     Target,
     resolve,
 )
+from .builtins import rule_tree_macros
 
 __all__ = [
-    "Chars",
     "Choice",
     "GrammarModel",
+    "MacroCall",
     "Node",
     "Production",
     "Reference",
     "Repetition",
     "Sequence",
     "Target",
+    "rule_tree_macros",
     "resolve",
 ]

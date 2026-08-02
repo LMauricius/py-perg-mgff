@@ -7,8 +7,8 @@ from pathlib import Path
 
 from ...diagnostics.source import SourceFile
 from ...generators import registry
-from ...grammar.parser import parse
 from ...mgff.lexer import lex
+from ...semantics.builtins import rule_tree_macros
 from ...semantics.model import resolve
 from .base import Command
 
@@ -40,15 +40,19 @@ class GenerateCommand(Command):
             print("generate: a file is required unless --list is given")
             return 2
 
-        # 1. Lex, parse and resolve the file into a model.
-        source = SourceFile.read(cli_args.file)
-        model = resolve(parse(lex(source)), name=source.name)
-
-        # 2. Look the backend up in the registry and run it over the model.
+        # 1. Look the backend up first: the constructs it registers are in force
+        #    while the grammar is read, so they must be known before resolving.
         backend = registry.get(cli_args.generator)
+        macros = backend.macros(rule_tree_macros())
+
+        # 2. Lex, parse and resolve the file into a model.
+        source = SourceFile.read(cli_args.file)
+        model = resolve(lex(source), name=source.name, macros=macros)
+
+        # 3. Run the backend over the model.
         written = backend.generate(model, Path(cli_args.out_dir))
 
-        # 3. Print the paths written.
+        # 4. Print the paths written.
         for path in written:
             print(path)
         return 0

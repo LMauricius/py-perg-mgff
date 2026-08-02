@@ -83,6 +83,49 @@ class File:
     lines: list[Line] = field(default_factory=list)
 
 
+#: The characters a signature escapes. Without them the text `\(\)`, which is
+#: two ordinary characters, would read as an empty group.
+SIGNATURE_ESCAPES = set("\\()")
+
+
+def signature_of(item: Item) -> str:
+    """The lookup key of a head or a call: its text with the groups emptied.
+
+    `sep(R)by(S)` and `sep(Ident = Expr)by(,)` both give `sep()by()`, so a call
+    finds its macro by shape alone. Text is escaped, so the item `\\(` gives
+    `\\(` and never the `()` of a real group.
+
+    This is also the string a macro's shape is matched against, so a shape is
+    recognised by the same key a name is looked up by.
+    """
+    out: list[str] = []
+    for part in item.parts:
+        if isinstance(part, Text):
+            out.append(
+                "".join(
+                    "\\" + char if char in SIGNATURE_ESCAPES else char
+                    for char in part.value
+                )
+            )
+        else:
+            out.append("()")
+    return "".join(out)
+
+
+def group_items(group: Group) -> list[Item]:
+    """Every item of a group, its lines joined into one sequence.
+
+    The line breaks inside a group are a matter of layout, so a subgroup and a
+    choice option both read their contents this way.
+    """
+    return [item for line in group.lines for item in line.items]
+
+
+def arguments_of(item: Item) -> list[list[Item]]:
+    """The argument of each group of a call, as a sequence of items."""
+    return [group_items(group) for group in item.groups]
+
+
 def render_item(item: Item) -> str:
     """Render an item back into MGFF-like text, for dumps and error messages."""
     from .escapes import escape_char

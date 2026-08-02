@@ -11,14 +11,28 @@ complete first item of a line; elsewhere it is ordinary text.
 The items of a body, of an attribute line and of a parameter slot are left as
 they were lexed. What an item *means* — a call, a subgroup, a character set — is
 read later, by shape.
+
+Parsing does not decide what a macro produces. Every `d` line is read into a
+`MacroSource` and handed to the **factory** the caller supplied, whose result
+becomes the `produce_call` of the definition filed in the scope. A caller
+building rule trees and one emitting a regular expression share every line of
+this module and differ only in that function.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from ..diagnostics.errors import SyntaxError_
 from ..diagnostics.span import Position, Span
 from ..mgff.cst import File, Group, Line
-from .scope import Macro, Scope, Target, make_macro
+from .macros import MacroDefinition, ProduceCall
+from .scope import MacroSource, Scope, Target, make_source
+from .shapes import definition_shape
+
+#: Builds what a call of one `d` definition produces. Called once per definition,
+#: with the line as it was written, after all of its alternatives are in.
+Factory = Callable[[MacroSource], ProduceCall]
 
 # The first items that carry a role. Any other first item is an error.
 MARKERS = frozenset({"#", "d", "/", "|", ">", "t", "p"})
@@ -44,8 +58,12 @@ def marker_of(line: Line) -> str | None:
     return first.text
 
 
-def parse(file: File) -> Scope:
+def parse(file: File, factory: Factory | None = None) -> Scope:
     """Read a lexed file as the scope it describes.
+
+    `factory` says what a call of each definition produces; without one the
+    definitions are filed with a `produce_call` that raises, which is enough for
+    reading a file's structure and no use for generating from it.
 
     Raises `SyntaxError_` on a line whose first item names no role, on an
     alternative with no macro to attach to, on mixed `/` and `|` markers, and on
@@ -53,8 +71,20 @@ def parse(file: File) -> Scope:
     defined twice in one scope.
     """
     root = Scope(span=_covering_span(file.lines), name="", parent=None)
-    _parse_lines(file.lines, root)
+    _parse_lines(file.lines, root, factory or _no_factory)
     return root
+
+
+def _no_factory(source: MacroSource) -> ProduceCall:
+    """The stand-in for a caller that only wants the structure of a file."""
+
+    def produce_call(**arguments: object) -> object:
+        raise SyntaxError_(
+            f"{source.name!r} was read without a generator to give it meaning",
+            source.span,
+        )
+
+    return produce_call
 
 
 def _covering_span(lines: list[Line]) -> Span:
@@ -62,15 +92,16 @@ def _covering_span(lines: list[Line]) -> Span:
     return Span.between(lines[0].span, lines[-1].span) if lines else _EMPTY_SPAN
 
 
-def _parse_lines(lines: list[Line], scope: Scope) -> None:
+def _parse_lines(lines: list[Line], scope: Scope, factory: Factory) -> None:
     """Walk the lines of one scope, dispatching on each line's first item.
 
     The macro of the last `d` line stays current across comment lines, so the
     `/`, `|` and `>` lines that follow attach to it. `closed` records that a `>`
     line has been seen: attributes end the alternatives.
     """
-    current: Macro | None = None
+    current: MacroSource | None = None
     closed = False
+    read: list[MacroSource] = []
 
     for line in lines:
         marker = marker_of(line)
@@ -91,7 +122,8 @@ def _parse_lines(lines: list[Line], scope: Scope) -> None:
         if marker == "d":
             current = _parse_definition(line, scope)
             closed = bool(current.attribute_lists)
-            scope.define(current)
+            scope.reserve(current)
+            read.append(current)
 
         # `/` and `|`: one more alternative of the current macro.
         elif marker in CHOICE_MARKERS:
@@ -106,14 +138,27 @@ def _parse_lines(lines: list[Line], scope: Scope) -> None:
 
         # `t Name ( … )` and `p Prefix ( … )`: a nested scope.
         else:
-            _parse_nested_scope(line, marker, scope)
+            _parse_nested_scope(line, marker, scope, factory)
             current, closed = None, False
+
+    # The alternatives of a `d` line arrive one line at a time, so a definition
+    # is built only once the whole scope has been read.
+    for source in read:
+        scope.define(source, _define(source, factory))
+
+
+def _define(source: MacroSource, factory: Factory) -> MacroDefinition:
+    """Build one definition: its shape from the head, its body from the factory."""
+    return MacroDefinition(
+        shape=definition_shape(source.signature, source.parameters),
+        produce_call=factory(source),
+    )
 
 
 # -- lines ------------------------------------------------------------------
 
 
-def _parse_definition(line: Line, scope: Scope) -> Macro:
+def _parse_definition(line: Line, scope: Scope) -> MacroSource:
     """Read a `d Head = Body` line into a macro holding its first alternative.
 
     The head is the item after `d`, and the separator is the item right after it,
@@ -130,7 +175,7 @@ def _parse_definition(line: Line, scope: Scope) -> Macro:
     if len(items) < 3 or not (items[2].is_bare_text and items[2].text in ("=", ">")):
         raise SyntaxError_("a definition needs `=` or `>` right after the head", items[1].span)
 
-    macro = make_macro(items[1], scope)
+    macro = make_source(items[1], scope)
     if items[2].text == "=":
         macro.options.append(items[3:])
     else:
@@ -138,7 +183,7 @@ def _parse_definition(line: Line, scope: Scope) -> Macro:
     return macro
 
 
-def _add_option(current: Macro | None, marker: str, closed: bool, line: Line) -> None:
+def _add_option(current: MacroSource | None, marker: str, closed: bool, line: Line) -> None:
     """Attach one `/` or `|` line to the current macro as a further alternative.
 
     All alternatives of one macro use the same marker, and none may follow the
@@ -160,7 +205,7 @@ def _add_option(current: Macro | None, marker: str, closed: bool, line: Line) ->
     current.options.append(line.items[1:])
 
 
-def _parse_nested_scope(line: Line, marker: str, parent: Scope) -> None:
+def _parse_nested_scope(line: Line, marker: str, parent: Scope, factory: Factory) -> None:
     """Read a `t Name ( … )` or `p Prefix ( … )` line and its contents.
 
     A prefix hands its names up to the parent once its own lines are read; a
@@ -172,11 +217,11 @@ def _parse_nested_scope(line: Line, marker: str, parent: Scope) -> None:
 
     if marker == "t":
         target = Target(span=span, name=name, parent=parent)
-        _parse_lines(body.lines, target)
+        _parse_lines(body.lines, target, factory)
         parent.add_target(target)
     else:
         scope = Scope(span=span, name=name, parent=parent)
-        _parse_lines(body.lines, scope)
+        _parse_lines(body.lines, scope, factory)
         parent.add_subscope(scope)
         parent.absorb(scope)
 

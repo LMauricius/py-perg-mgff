@@ -6,7 +6,7 @@ import argparse
 
 from ...diagnostics.source import SourceFile
 from ...grammar.parser import parse
-from ...grammar.scope import Macro, Scope
+from ...grammar.scope import MacroSource, Scope
 from ...mgff.cst import Item, render_item
 from ...mgff.lexer import lex
 from .base import Command
@@ -49,7 +49,7 @@ def _render_scope(root: Scope, name: str, spans: bool, absorbed: bool) -> str:
 
 
 def _render_body(scope: Scope, depth: int, out: list[str], spans: bool, absorbed: bool) -> None:
-    for key, macro in scope.macros.items():
+    for key, macro in scope.sources.items():
         # A macro whose key is not its own signature was absorbed from a prefix
         # scope, so it is already listed there under its local name.
         if macro.scope is not scope and not absorbed:
@@ -67,7 +67,7 @@ def _render_body(scope: Scope, depth: int, out: list[str], spans: bool, absorbed
         _render_body(target, depth + 1, out, spans, absorbed)
 
 
-def _render_macro(key: str, macro: Macro, depth: int, out: list[str], spans: bool) -> None:
+def _render_macro(key: str, macro: MacroSource, depth: int, out: list[str], spans: bool) -> None:
     detail = key
     if macro.parameters:
         detail += f"  ({', '.join(macro.parameters)})"

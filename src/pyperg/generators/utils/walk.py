@@ -5,17 +5,29 @@ does it reference, can it match nothing, and is it in truth a fixed string?
 
 **Literal fusing** deserves a note. MGFF has no multi-character literal item: a
 part of a character set is one character, so the alternative `< =` arrives as
-two single-character `Chars` nodes. A backend that wants to emit "match the
-string `<=`" must first merge them, which is what `fuse_literals` does. Without
-it every literal longer than one character would fall through to a regular
-expression.
+two single-character character-set nodes. A backend that wants to emit "match
+the string `<=`" must first merge them, which is what `fuse_literals` does.
+Without it every literal longer than one character would fall through to a
+regular expression.
+
+A `MacroCall` belongs to whichever macro built it, so nothing here reads one
+except through its arguments, which are ordinary rules.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 
-from ...semantics.model import Chars, Choice, Node, Production, Reference, Repetition, Sequence
+from ...semantics.charset import character_set_of
+from ...semantics.model import (
+    Choice,
+    MacroCall,
+    Node,
+    Production,
+    Reference,
+    Repetition,
+    Sequence,
+)
 
 
 def walk(node: Node) -> Iterator[Node]:
@@ -29,6 +41,9 @@ def walk(node: Node) -> Iterator[Node]:
     elif isinstance(node, Choice):
         for option in node.options:
             yield from walk(option)
+    elif isinstance(node, MacroCall):
+        for argument in node.arguments:
+            yield from walk(argument)
 
 
 def references(node: Node) -> list[str]:
@@ -49,8 +64,15 @@ def nullable(node: Node, lookup: Callable[[str], Production | None]) -> bool:
 def _nullable(
     node: Node, lookup: Callable[[str], Production | None], seen: set[str]
 ) -> bool:
-    if isinstance(node, Chars):
-        return False
+    if isinstance(node, MacroCall):
+        # A character set consumes a character. Any other macro is nullable only
+        # when everything it wraps is, and one wrapping nothing is not: a
+        # backend deciding whether it must consume input wants the safe answer.
+        if character_set_of(node) is not None:
+            return False
+        return bool(node.arguments) and all(
+            _nullable(argument, lookup, seen) for argument in node.arguments
+        )
     if isinstance(node, Sequence):
         return all(_nullable(item, lookup, seen) for item in node.items)
     if isinstance(node, Repetition):
@@ -84,8 +106,9 @@ def flatten(node: Node) -> list[Node]:
 
 def single_character(node: Node) -> str | None:
     """The one character a node matches, or None when it matches anything else."""
-    if isinstance(node, Chars):
-        return node.characters.single_character
+    characters = character_set_of(node)
+    if characters is not None:
+        return characters.single_character
     if isinstance(node, Sequence) and len(node.items) == 1:
         return single_character(node.items[0])
     return None

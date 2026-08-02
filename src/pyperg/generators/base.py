@@ -5,6 +5,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from pathlib import Path
 
+from ..grammar.macros import Macro
 from ..semantics.model import GrammarModel
 
 
@@ -31,3 +32,12 @@ class Generator(ABC):
     def supports_target(self, target: str) -> bool:
         """Whether the backend handles a given generation phase, e.g. `Lex`."""
         return True
+
+    def macros(self, order: list[Macro]) -> list[Macro]:
+        """The definitions in force while the grammar is read, given the default.
+
+        A backend that gives a shape a meaning of its own — a capture group, say
+        — returns the order with its own definition spliced in, and reads the
+        result back as a `MacroCall` naming that definition.
+        """
+        return order
