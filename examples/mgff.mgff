@@ -1,0 +1,96 @@
+# MGFF, described in MGFF.
+#
+# The `Lex` target is Part 1 of the specification: how a file splits into text,
+# escapes and groups. The `Parse` target is Part 2: what those pieces mean.
+#
+# Ordinary text carries no token of its own, on purpose. MGFF has no negated
+# character set, so "every character that is not a bracket" cannot be written
+# down; nor does it need to be, since text nobody claims is exactly what a
+# highlighter calls normal.
+
+d Language > name(MGFF) section(Sources) extensions(*.mgff)
+           > mimetype(text/x-mgff) license(MIT)
+
+t Lex (
+
+    # -- the alphabet ------------------------------------------------------
+
+    d Hex      = 0-9|a-f|A-F
+    d NameChar = A-Z|0-9|-|_
+
+    # The closed set of one-character escapes.
+    d Simple = \(|\)|\\|_|a|b|f|n|r|t|v
+
+    # Everything that may follow a `#` to the end of the line. Written as
+    # categories because there is no way to say "anything but a newline", and
+    # a line is all a highlighter ever sees at once anyway.
+    d AnyChar = Letter|Mark|Number|Punctuation|Symbol|Separator|\t
+
+    # -- Part 1: the shape of a file ---------------------------------------
+
+    d Space = ( \_|\t )+
+        > class(Normal)
+
+    # A comment is a line whose first item is `#`.
+    d Comment = # ( AnyChar )*
+        > class(Comment)
+
+    # An escape denotes exactly one character, and the set is closed: a
+    # backslash followed by anything not listed here is an error.
+    d Escape = \\ Simple
+             / \\ 0
+             / \\ x Hex Hex
+             / \\ u Hex Hex Hex Hex
+             / \\ U Hex Hex Hex Hex Hex Hex Hex Hex
+             / \\ < ( NameChar )+ >
+        > class(SpecialChar)
+
+    # `(` and `)` are the only brackets. Every other character is text.
+    d LParen = \(
+        > class(Normal)
+
+    d RParen = \)
+        > class(Normal)
+
+    # -- Part 2: the markers that give a line its role ---------------------
+
+    # `d` a macro definition, `t` a generation target, `p` a name prefix.
+    # A keyword list matches between word boundaries, so the `d` of `Digit`
+    # is not one of these.
+    d LineMarker = d
+                 | t
+                 | p
+        > class(Keyword)
+
+    # `|` a length-based alternative, `/` an order-based one, `>` attributes.
+    # None of the three needs an escape: a marker has its role only as the
+    # first item of a line, and here they are the body of one.
+    d ChoiceMarker = |
+                   / /
+                   / >
+        > class(ControlFlow)
+
+    # The first top-level `=` separates a head from its body.
+    d Equals = =
+        > class(Operator)
+
+    # The starting production: the tokens, in the order they should be tried.
+    d File = ( (Space)/(Comment)/(Escape)/(LineMarker)
+             / (ChoiceMarker)/(Equals)/(LParen)/(RParen) )*
+)
+
+t Parse (
+
+    # A group is the only thing in MGFF that nests, and so the only structure
+    # a context stack can follow: `(` pushes, `)` pops, and the pair folds.
+    d Group = \( ( Line )* \)
+
+    # Within an item, text and groups alternate.
+    d Item = Group
+           / Escape
+
+    # A line's role is fixed by its first item.
+    d Line = ( LineMarker )? ( Item )*
+
+    d File = ( Line )*
+)

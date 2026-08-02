@@ -57,9 +57,12 @@ t Lex (
     d Int   = ( Digit )+
             > class(DecVal)
 
-    d File = ( Space / Comment / Keyword / Int / Ident )*
+    d File = ( (Space)/(Comment)/(Keyword)/(Int)/(Ident) )*
 )
 ```
+
+Mind the spelling of the choice: it carries no whitespace around its separator,
+since a space there would split it into separate items.
 
 Two things follow from writing it this way.
 

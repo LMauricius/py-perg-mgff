@@ -48,7 +48,9 @@ t Lex (
         > class(Normal)
 
     # The starting production: the file is a list of tokens, tried in order.
-    d File = ( Space / Comment / Keyword / Number / Ident / Op / LParen / RParen )*
+    # A choice carries no whitespace around its separator, or the space would
+    # split it into separate items.
+    d File = ( (Space)/(Comment)/(Keyword)/(Number)/(Ident)/(Op)/(LParen)/(RParen) )*
 )
 
 t Parse (
