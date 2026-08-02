@@ -24,15 +24,10 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from ...mgff.semantics.charset import CharacterPart, CharacterSet, character_set_of
-from ...mgff.semantics.model import (
-    Choice,
-    MacroCall,
-    Node,
-    Production,
-    Repetition,
-    Sequence,
-)
+from ...mgff.common.characters import character_set_of
+from ...mgff.common.charset import CharacterPart, CharacterSet
+from ...mgff.semantics.nodes import Choice, MacroCall, Node, Repetition, Sequence
+from ...mgff.semantics.model import Production
 
 #: Characters that need a backslash outside a character class.
 METACHARACTERS = set(r".^$*+?()[]{}|\\")
@@ -122,10 +117,13 @@ def _regex(node: Node, lookup: Lookup, emit: Emit | None, seen: frozenset[str]) 
         return emit(node, lambda inner: _regex(inner, lookup, emit, seen))
 
     if isinstance(node, Sequence):
-        pieces = [_regex(item, lookup, emit, seen) for item in node.items]
-        if any(piece is None for piece in pieces):
-            return None
-        return "".join(_grouped_for_sequence(piece) for piece in pieces)  # type: ignore[arg-type]
+        pieces: list[str] = []
+        for item in node.items:
+            piece = _regex(item, lookup, emit, seen)
+            if piece is None:
+                return None
+            pieces.append(piece)
+        return "".join(_grouped_for_sequence(piece) for piece in pieces)
 
     if isinstance(node, Repetition):
         body = _regex(node.body, lookup, emit, seen)
@@ -134,10 +132,13 @@ def _regex(node: Node, lookup: Lookup, emit: Emit | None, seen: frozenset[str]) 
         return _atom(body) + _quantifier(node.minimum, node.maximum)
 
     if isinstance(node, Choice):
-        options = [_regex(option, lookup, emit, seen) for option in node.options]
-        if any(option is None for option in options):
-            return None
-        return _alternation(options, node.symbol)  # type: ignore[arg-type]
+        options: list[str] = []
+        for option in node.options:
+            pattern = _regex(option, lookup, emit, seen)
+            if pattern is None:
+                return None
+            options.append(pattern)
+        return _alternation(options, node.symbol)
 
     # A reference: inline the production it names, once.
     if node.name in seen:

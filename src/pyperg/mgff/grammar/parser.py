@@ -27,8 +27,8 @@ from ...diagnostics.errors import SyntaxError_
 from ...diagnostics.span import Position, Span
 from ..lexing.cst import File, Group, Line
 from .macros import MacroDefinition, ProduceCall
-from .scope import MacroSource, Scope, Target, make_source
-from .shapes import definition_shape
+from .scope import MacroSource, Scope, TargetScope, make_source
+from .signatures import definition_shape
 
 #: Builds what a call of one `d` definition produces. Called once per definition,
 #: with the line as it was written, after all of its alternatives are in.
@@ -224,7 +224,7 @@ def _parse_nested_scope(
     span = Span.between(line.items[0].span, body.span)
 
     if marker == "t":
-        target = Target(span=span, name=name, parent=parent)
+        target = TargetScope(span=span, name=name, parent=parent)
         _parse_lines(body.lines, target, factory)
         parent.add_target(target)
     else:

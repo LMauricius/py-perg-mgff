@@ -8,9 +8,9 @@ from pathlib import Path
 from ...diagnostics.source import SourceFile
 from ...generators import registry
 from ...mgff.lexing.lexer import lex
-from ...mgff.semantics.builtins import rule_tree_macros
 from ...mgff.semantics.model import resolve
 from .base import Command
+
 
 class GenerateCommand(Command):
     name = "generate"
@@ -43,11 +43,10 @@ class GenerateCommand(Command):
         # 1. Look the backend up first: the constructs it registers are in force
         #    while the grammar is read, so they must be known before resolving.
         backend = registry.get(cli_args.generator)
-        macros = backend.macros(rule_tree_macros())
 
         # 2. Lex, parse and resolve the file into a model.
         source = SourceFile.read(cli_args.file)
-        model = resolve(lex(source), name=source.name, macros=macros)
+        model = resolve(lex(source), name=source.name, macros=backend.macros())
 
         # 3. Run the backend over the model.
         written = backend.generate(model, Path(cli_args.out_dir))

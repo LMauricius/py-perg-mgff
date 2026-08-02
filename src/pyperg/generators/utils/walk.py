@@ -18,16 +18,9 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 
-from ...mgff.semantics.charset import character_set_of
-from ...mgff.semantics.model import (
-    Choice,
-    MacroCall,
-    Node,
-    Production,
-    Reference,
-    Repetition,
-    Sequence,
-)
+from ...mgff.common.characters import character_set_of
+from ...mgff.semantics.nodes import Choice, MacroCall, Node, Reference, Repetition, Sequence
+from ...mgff.semantics.model import Production
 
 def walk(node: Node) -> Iterator[Node]:
     """Every node of a tree, the node itself first."""
@@ -121,10 +114,13 @@ def literal_of(node: Node) -> str | None:
     parts = flatten(node)
     if not parts:
         return None
-    characters = [single_character(part) for part in parts]
-    if any(character is None for character in characters):
-        return None
-    return "".join(characters)  # type: ignore[arg-type]
+    characters: list[str] = []
+    for part in parts:
+        character = single_character(part)
+        if character is None:
+            return None
+        characters.append(character)
+    return "".join(characters)
 
 
 def fuse_literals(nodes: list[Node]) -> list[Node]:

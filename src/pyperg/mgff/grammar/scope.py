@@ -41,13 +41,15 @@ __all__ = [
     "MacroDefinition",
     "MacroSource",
     "Scope",
-    "Target",
+    "TargetScope",
     "make_source",
     "signature_of",
 ]
 
 
-@dataclass(slots=True)
+#: Sources compare by identity: two `d` lines are the same macro only when they
+#: are the same line, however alike their heads and bodies look.
+@dataclass(slots=True, eq=False)
 class MacroSource:
     """A `d Head = Body` line as it was written, for the factory to read.
 
@@ -82,7 +84,7 @@ class MacroSource:
         return not self.options
 
 
-@dataclass(slots=True)
+@dataclass(slots=True, eq=False)
 class Scope:
     """A region holding macros, prefix scopes and targets.
 
@@ -98,7 +100,7 @@ class Scope:
     macros: dict[str, MacroDefinition] = field(default_factory=dict)
     sources: dict[str, MacroSource] = field(default_factory=dict)
     subscopes: dict[str, Scope] = field(default_factory=dict)
-    targets: dict[str, Target] = field(default_factory=dict)
+    targets: dict[str, TargetScope] = field(default_factory=dict)
 
     # -- construction ------------------------------------------------------
 
@@ -120,7 +122,7 @@ class Scope:
         self._claim(scope.name, scope.span, "prefix", among=self.subscopes)
         self.subscopes[scope.name] = scope
 
-    def add_target(self, target: Target) -> None:
+    def add_target(self, target: TargetScope) -> None:
         """Register a target nested directly in this one."""
         self._claim(target.name, target.span, "target", among=self.targets)
         self.targets[target.name] = target
@@ -146,7 +148,7 @@ class Scope:
         key: str,
         span: Span,
         kind: str,
-        among: dict[str, Scope] | dict[str, Target] | None = None,
+        among: dict[str, Scope] | dict[str, TargetScope] | None = None,
     ) -> None:
         """Reject a name already taken in this scope, pointing at the newcomer."""
         taken = self.sources if among is None else among
@@ -190,9 +192,13 @@ class Scope:
         return "".join(reversed(names))
 
 
-@dataclass(slots=True)
-class Target(Scope):
-    """One generation phase, typically `Lex` for tokens and `Parse` for grammar."""
+@dataclass(slots=True, eq=False)
+class TargetScope(Scope):
+    """One generation phase, typically `Lex` for tokens and `Parse` for grammar.
+
+    Named for the scope it is, so that `semantics.model.Target` — the *resolved*
+    phase a backend reads — keeps the plain name.
+    """
 
 
 def make_source(head: Item, scope: Scope) -> MacroSource:

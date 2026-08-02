@@ -30,8 +30,16 @@ from dataclasses import dataclass
 
 from .shapes import MacroShape
 
-#: Turns what a call carries into whatever the caller is generating. The keys of
-#: the shape's dictionary are this function's parameters.
+#: Turns what a call carries into whatever the caller is generating.
+#:
+#: Called as `produce_call(context, **extracted)`: a `CallContext` first, then
+#: the shape's dictionary as keyword arguments, so the function is written with
+#: the parameters its shape names. Returning None **declines** the call, and the
+#: order moves on to the next macro — which is how `9-0`, matching the shape of a
+#: character set but naming no valid one, goes on to be read as a name.
+#:
+#: The return type is `object` rather than a node: what a call produces is the
+#: caller's business, and a rule tree is only the most common answer.
 ProduceCall = Callable[..., object]
 
 

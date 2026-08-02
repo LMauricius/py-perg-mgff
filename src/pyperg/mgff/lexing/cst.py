@@ -13,6 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from ...diagnostics.span import Span
+from .escapes import escape_char
 
 
 @dataclass(slots=True)
@@ -128,8 +129,6 @@ def arguments_of(item: Item) -> list[list[Item]]:
 
 def render_item(item: Item) -> str:
     """Render an item back into MGFF-like text, for dumps and error messages."""
-    from .escapes import escape_char
-
     out: list[str] = []
     for part in item.parts:
         if isinstance(part, Text):

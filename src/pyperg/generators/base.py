@@ -5,8 +5,10 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from pathlib import Path
 
-from ..mgff.grammar.macros import Macro
+from ..mgff.common.order import rule_tree_macros
+from ..mgff.grammar.macros import Macro, MacroDefinition
 from ..mgff.semantics.model import GrammarModel
+
 
 class Generator(ABC):
     """A backend turning a resolved grammar into output files.
@@ -28,11 +30,16 @@ class Generator(ABC):
         cannot express.
         """
 
-    def macros(self, order: list[Macro]) -> list[Macro]:
-        """The definitions in force while the grammar is read, given the default.
+    def extra_macros(self) -> list[MacroDefinition]:
+        """The macros this backend recognises besides the common ones.
 
         A backend that gives a shape a meaning of its own — a capture group, say
-        — returns the order with its own definition spliced in, and reads the
-        result back as a `MacroCall` naming that definition.
+        — returns its definition here, and reads the calls back as a `MacroCall`
+        naming it. Where they sit in the order is settled by `rule_tree_macros`:
+        above every name, alongside `( R )+`.
         """
-        return order
+        return []
+
+    def macros(self) -> list[Macro]:
+        """The definitions in force while a grammar is read for this backend."""
+        return rule_tree_macros(self.extra_macros())

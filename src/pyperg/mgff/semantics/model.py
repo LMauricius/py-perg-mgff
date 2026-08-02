@@ -4,7 +4,7 @@ This is the boundary between the front end and the backends: everything MGFF
 defines has been read and resolved, and nothing here refers to the concrete
 syntax any more.
 
-A production's alternatives are **rule trees**, whose node kinds are described
+A production's alternatives are **rule trees**, whose node kinds live
 in `nodes`. Only `Reference` still names something; every other node is
 self-contained, and a `MacroCall` keeps the item it was written as, for whoever
 defined the macro that built it.
@@ -17,32 +17,26 @@ parameters expands in place, since a mixfix macro has no body of its own to
 point at, while an argument-less one becomes a reference, so a recursive or
 mutually recursive grammar resolves without looping.
 
-Which macros are in force is fixed before parsing starts: the built-ins of
-`builtins`, plus whatever the chosen backend adds.
+Which macros are in force is fixed before parsing starts, and is handed to
+`resolve` rather than decided here: the common vocabulary of `mgff.common`, plus
+whatever the chosen backend adds to it.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import cast
 
 from ...diagnostics.errors import SemanticError
 from ...diagnostics.span import Span
 from ..grammar.expand import expand
 from ..grammar.macros import Macro, ProduceCall, Scoped
 from ..grammar.parser import parse
-from ..grammar.scope import MacroSource, Scope, Target as ScopeTarget, signature_of
+from ..grammar.scope import MacroSource, Scope, TargetScope, signature_of
 from ..lexing.cst import File, Group, Item, group_items, render_item
-from .builtins import collect_attributes, rule_tree_macros
-
-# The node kinds are re-exported: a backend reads the model through this module.
-from .nodes import (
-    Choice,
-    MacroCall,
-    Node,
-    Reference,
-    Repetition,
-    Sequence,
-)  # noqa: F401
+from .attributes import collect_attributes
+from .context import CallContext
+from .nodes import Choice, Node, Reference, Sequence
 
 #: Targets known to match textual characters throughout, so a rule of theirs is
 #: never anything but characters. Other targets may still spell a terminal as a
@@ -110,26 +104,27 @@ class GrammarModel:
 # -- resolution ------------------------------------------------------------
 
 
-def resolve(
-    file: File, name: str = "grammar", macros: list[Macro] | None = None
-) -> GrammarModel:
+def resolve(file: File, name: str, macros: list[Macro]) -> GrammarModel:
     """Read a lexed file as the model a rule-tree backend generates from.
 
     Parses the file with the rule-tree factory, then collects the productions per
     target. `name` names the grammar, normally the source file it came from.
-    `macros` are the definitions in force, the built-in ones when a caller names
-    no others.
+
+    `macros` are the definitions in force, and they are asked for rather than
+    assumed: nothing in MGFF says what `( R )+` means, so the vocabulary is the
+    generator's to choose. `mgff.common.rule_tree_macros` builds the usual one.
     """
-    trees = RuleTrees(macros if macros is not None else rule_tree_macros())
-    grammar = parse(file, trees.factory)
+    grammar = parse(file, defined_macro_factory)
 
     model = GrammarModel(name=name)
     # Earlier targets stay visible to later ones: MGFF leaves the decision to
     # the generator, and a `Parse` naming the tokens of a `Lex` is the usual
     # arrangement — Appendix A writes `d Factor = Number / Ident / \( Expr \)`.
-    earlier: list[ScopeTarget] = []
+    earlier: list[TargetScope] = []
     for target_name, scope_target in grammar.targets.items():
-        model.targets.append(trees.resolve_target(target_name, scope_target, earlier))
+        model.targets.append(
+            resolve_target(macros, target_name, scope_target, earlier)
+        )
         earlier.append(scope_target)
     model.metadata = _resolve_metadata(grammar)
     return model
@@ -154,89 +149,70 @@ def _target_name(source: MacroSource) -> str:
     return defining.name if defining is not None else ""
 
 
-def _defining_target(source: MacroSource) -> ScopeTarget | None:
+def _defining_target(source: MacroSource) -> TargetScope | None:
     """The target a macro was written in, or None when it is shared by all."""
     scope: Scope | None = source.scope
     while scope is not None:
-        if isinstance(scope, ScopeTarget):
+        if isinstance(scope, TargetScope):
             return scope
         scope = scope.parent
     return None
 
 
-class RuleTrees:
-    """The factory building rule trees, and the resolver reading items for it.
+def defined_macro_factory(source: MacroSource) -> ProduceCall:
+    """What a call of one of the grammar's own `d` definitions produces.
 
-    A definition's `produce_call` is built once, at parse time, and called once
-    per use — possibly under several targets, since a macro reached from two
-    targets is resolved once for each. What differs between those uses is the
-    production table it registers in and the scope the call was written in, so
-    both are held here, in `current`, rather than captured per definition.
+    Built while the file is parsed, long before any resolver exists, so the
+    resolver to use arrives with the call rather than being captured here.
     """
 
-    def __init__(self, macros: list[Macro]) -> None:
-        self.macros = macros
-        self.current: _Resolver | None = None
+    def produce_call(context: CallContext, **arguments: object) -> object:
+        return context.resolver.call_defined(source, context, arguments)
 
-    # -- the factory -------------------------------------------------------
+    return produce_call
 
-    def factory(self, source: MacroSource) -> ProduceCall:
-        """What a call of one `d` definition produces: a node of a rule tree."""
 
-        def produce_call(**arguments: object) -> Node:
-            assert self.current is not None  # only ever called while resolving
-            return self.current.call(source, arguments)
-
-        return produce_call
-
-    # -- driving -----------------------------------------------------------
-
-    def resolve_target(
-        self, name: str, scope_target: ScopeTarget, earlier: list[ScopeTarget]
-    ) -> Target:
-        """Resolve every production a target owns or reaches."""
-        target = Target(name=name, matches_characters=name in CHARACTER_TARGETS)
-        resolver = _Resolver(self, target, earlier)
-        previous, self.current = self.current, resolver
-        try:
-            # Seed with the macros written directly in the target; references
-            # then pull in whatever else they reach, including macros shared
-            # outside it.
-            for source in list(scope_target.sources.values()):
-                if not source.matches_nothing:
-                    resolver.require(source)
-            resolver.run()
-        finally:
-            self.current = previous
-        return target
+def resolve_target(
+    macros: list[Macro],
+    name: str,
+    scope_target: TargetScope,
+    earlier: list[TargetScope],
+) -> Target:
+    """Resolve every production one target owns or reaches."""
+    target = Target(name=name, matches_characters=name in CHARACTER_TARGETS)
+    resolver = _Resolver(macros, target, earlier)
+    # Seed with the macros written directly in the target; references then pull
+    # in whatever else they reach, including macros shared outside it.
+    for source in list(scope_target.sources.values()):
+        if not source.matches_nothing:
+            resolver.require(source)
+    resolver.run()
+    return target
 
 
 class _Resolver:
     """Builds one target's production table, following references as it goes."""
 
     def __init__(
-        self, trees: RuleTrees, target: Target, earlier: list[ScopeTarget]
+        self, macros: list[Macro], target: Target, earlier: list[TargetScope]
     ) -> None:
-        self.trees = trees
+        self.macros = macros
         self.target = target
         self.earlier = earlier
         self.pending: list[tuple[str, MacroSource]] = []
         # Which name each macro was filed under, so a second reference to the
-        # same macro reuses it instead of renaming it.
-        self.names: dict[int, str] = {}
-        # Where the item being read was written, and how deep the expansion of
-        # mixfix calls has gone. A definition's `produce_call` reads both.
-        self.scope: Scope | None = None
-        self.depth = 0
+        # same macro reuses it instead of renaming it. Sources compare by
+        # identity, so the same `d` line is the same key however it is reached.
+        self.names: dict[MacroSource, str] = {}
 
     # -- driving -----------------------------------------------------------
 
     def require(self, source: MacroSource) -> str:
         """Register a macro as a production of this target and return its name."""
-        if id(source) in self.names:
-            return self.names[id(source)]
+        if source in self.names:
+            return self.names[source]
         name = self.production_name(source)
-        self.names[id(source)] = name
+        self.names[source] = name
         # Reserve the name before resolving, so a self-reference finds it.
         self.target.productions[name] = Production(
             name=name, span=source.span, origin=_target_name(source)
@@ -289,21 +265,24 @@ class _Resolver:
         here, which is what an unknown name is.
         """
         signature = signature_of(item)
-        for macro in self.trees.macros:
-            match = macro.shape.match(signature)
-            if match is None:
+        for macro in self.macros:
+            # `Scoped` is a place in the order rather than a macro: its shape
+            # only filters the item, and the grammar's own definitions are
+            # consulted there.
+            selected = macro.shape.match(signature)
+            if selected is None:
                 continue
-            # `Scoped` is a place in the order rather than a macro: the grammar's
-            # own definitions are consulted here, and the one found brings the
-            # shape that reads the call's arguments.
-            definition = macro
-            if isinstance(macro, Scoped):
-                found = self.lookup(signature, scope)
-                if found is None:
-                    continue
-                definition = found
-            arguments = definition.shape.extract_args(item, match)
-            node = self.produce(definition.produce_call, arguments, scope, depth, item)
+            definition = self.lookup(signature, scope) if isinstance(macro, Scoped) else macro
+            if definition is None:
+                continue
+            # `selected` belongs to the pattern that chose the macro, which for a
+            # `Scoped` is the filter rather than the definition's own pattern.
+            # The two differ for a prefix scope — `Util_pair` is found under that
+            # key while the definition's pattern is the `pair` it was written as
+            # — so a definition reached by name reads the item alone and never
+            # touches the match.
+            arguments = definition.shape.extract_args(item, selected)
+            node = self.produce(definition.produce_call, arguments, scope, depth)
             if node is not None:
                 return node
         raise SemanticError(f"unknown name {render_item(item)!r}", item.span)
@@ -314,7 +293,6 @@ class _Resolver:
         arguments: dict[str, object],
         scope: Scope,
         depth: int,
-        item: Item,
     ) -> Node | None:
         """Call a definition, with the rules among its arguments read first.
 
@@ -322,17 +300,17 @@ class _Resolver:
         such as `( R )+` never touches the resolver. Anything else is passed on
         as it was extracted — the items filling a mixfix macro's slot, say, which
         are substituted into its body rather than read where they stand.
+
+        A definition returning None declines the call, and the order moves on to
+        the next macro: `9-0` is no character set, so it goes on to be read as a
+        name and reported as an unknown one.
         """
         read = {
             name: self.produced(value, scope, depth)
             for name, value in arguments.items()
         }
-        previous = (self.scope, self.depth)
-        self.scope, self.depth = scope, depth
-        try:
-            return produce_call(**read)  # type: ignore[return-value]
-        finally:
-            self.scope, self.depth = previous
+        context = CallContext(scope=scope, depth=depth, resolver=self)
+        return cast("Node | None", produce_call(context, **read))
 
     def produced(self, value: object, scope: Scope, depth: int) -> object:
         """A group as the rule it holds; anything else unchanged."""
@@ -360,7 +338,9 @@ class _Resolver:
 
     # -- what a `d` definition produces ------------------------------------
 
-    def call(self, source: MacroSource, arguments: dict[str, object]) -> Node:
+    def call_defined(
+        self, source: MacroSource, context: CallContext, arguments: dict[str, object]
+    ) -> Node:
         """A call of one of the grammar's own definitions.
 
         An argument-less one is linked rather than expanded, so a recursive
@@ -368,8 +348,7 @@ class _Resolver:
         its call is substituted; the depth limit is what stops a mixfix macro
         that expands into itself.
         """
-        scope, depth = self.scope, self.depth
-        assert scope is not None
+        scope, depth = context.scope, context.depth
         if source.matches_nothing:
             raise SemanticError(
                 f"{source.name!r} is a list of attributes and matches nothing",
@@ -389,7 +368,7 @@ class _Resolver:
         bindings = {name: value for name, value in arguments.items()}
         nodes = [
             self.sequence(option, scope, depth + 1)
-            for option in expand(source.options, bindings)  # type: ignore[arg-type]
+            for option in expand(source.options, cast("dict[str, list[Item]]", bindings))
         ]
         if len(nodes) == 1:
             return nodes[0]

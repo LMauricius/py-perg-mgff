@@ -9,23 +9,18 @@ from pyperg.mgff.grammar.expand import substitute
 from pyperg.mgff.grammar.macros import Scoped
 from pyperg.mgff.lexing.cst import render_item, signature_of
 from pyperg.mgff.lexing.lexer import lex_text
-from pyperg.mgff.semantics.builtins import rule_tree_macros
-from pyperg.mgff.semantics.charset import is_category_name, parse_character_set
-from pyperg.mgff.semantics.model import (
-    Choice,
-    MacroCall,
-    Reference,
-    Repetition,
-    Sequence,
-    resolve,
-)
+from pyperg.mgff.common.order import rule_tree_macros
+from pyperg.mgff.common.categories import is_category_name
+from pyperg.mgff.common.charset import parse_character_set
+from pyperg.mgff.semantics.nodes import Choice, MacroCall, Reference, Repetition, Sequence
+from pyperg.mgff.semantics.model import resolve
 
 def read_fixture(name: str) -> str:
     return (Path(__file__).parent / "fixtures" / name).read_text(encoding="utf-8")
 
 
 def model_of(text: str, name: str = "<test>"):
-    return resolve(lex_text(text, name), name)
+    return resolve(lex_text(text, name), name, rule_tree_macros())
 
 
 def first_item(text: str):

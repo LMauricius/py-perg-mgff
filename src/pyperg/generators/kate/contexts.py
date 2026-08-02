@@ -220,7 +220,7 @@ class ContextBuilder:
             self.build_grammar_context()
             self.build_bracket_contexts()
         if self.lex is not None:
-            self.build_tokens_context()
+            self.build_tokens_context(self.lex)
 
     def elements(self) -> tuple[list[Element], list[Element], list[Element]]:
         """The contexts, the item data and the keyword lists."""
@@ -243,12 +243,11 @@ class ContextBuilder:
 
     # -- Lex ---------------------------------------------------------------
 
-    def build_tokens_context(self) -> None:
+    def build_tokens_context(self, lex: Target) -> None:
         """One context holding a rule for every token `File` names."""
-        assert self.lex is not None
         element = self.context(TOKENS_CONTEXT)
-        for name in token_order(self.lex):
-            production = self.lex.productions[name]
+        for name in token_order(lex):
+            production = lex.productions[name]
             where = RuleContext(attribute=self.item_datas.attribute_for(production))
             element.children.extend(self.lex_rules.rules_for(production, where))
 
@@ -258,9 +257,11 @@ class ContextBuilder:
         """The `Parse` productions reachable from its `File`, `File` aside.
 
         A production of the `Lex` target reached from here is left out: its
-        tokens are already matched by the `Tokens` context.
+        tokens are already matched by the `Tokens` context. Empty when the
+        grammar has no `Parse` target at all.
         """
-        assert self.parse is not None
+        if self.parse is None:
+            return []
         graph = reference_graph(self.parse.productions)
         reachable = reachable_from(START_PRODUCTION, graph)
         return [

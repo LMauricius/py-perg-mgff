@@ -6,11 +6,13 @@ import pytest
 
 from pyperg.diagnostics.errors import SemanticError
 from pyperg.mgff.grammar.macros import MacroDefinition, Scoped
-from pyperg.mgff.grammar.shapes import NAME_CHARACTER, shape
+from pyperg.mgff.grammar.signatures import NAME_CHARACTER, shape
 from pyperg.mgff.lexing.cst import Item
 from pyperg.mgff.lexing.lexer import lex_text
-from pyperg.mgff.semantics.builtins import rule_tree_macros
-from pyperg.mgff.semantics.model import MacroCall, Node, Reference, Repetition, resolve
+from pyperg.mgff.common.order import rule_tree_macros
+from pyperg.mgff.semantics.context import CallContext
+from pyperg.mgff.semantics.nodes import MacroCall, Node, Reference, Repetition
+from pyperg.mgff.semantics.model import resolve
 
 def capture_args(item: Item, match: re.Match[str]) -> dict[str, object]:
     """What a capture carries: the name in front of the colon, and the rule.
@@ -21,8 +23,14 @@ def capture_args(item: Item, match: re.Match[str]) -> dict[str, object]:
     return {"item": item, "name": match["name"], "body": item.groups[0]}
 
 
-def produce_capture(item: Item, name: str, body: Node) -> Node:
-    """A stand-in for what a backend defines: a group carrying a name."""
+def produce_capture(
+    context: CallContext, item: Item, name: str, body: Node
+) -> Node:
+    """A stand-in for what a backend defines: a group carrying a name.
+
+    The context goes unread, as it does for most macros: a capture means the
+    same thing wherever it was written.
+    """
     return MacroCall(macro=CAPTURE, item=item, arguments=[body])
 
 
@@ -42,15 +50,8 @@ t Lex (
 
 
 def with_capture() -> list:
-    """The default order, with the capture where it yields to a definition.
-
-    A capture carries groups, so it is placed after the point at which the
-    grammar's own definitions carrying arguments are consulted. That is what
-    makes a grammar defining `number:(R)` win over it.
-    """
-    order = rule_tree_macros()
-    scoped = next(index for index, macro in enumerate(order) if isinstance(macro, Scoped))
-    return order[: scoped + 1] + [CAPTURE] + order[scoped + 1 :]
+    """The order a backend registering the capture reads items in."""
+    return rule_tree_macros([CAPTURE])
 
 
 def model_of(text: str, macros: list | None = None):
@@ -90,13 +91,19 @@ def test_a_shape_no_macro_answers_to_is_an_unknown_name():
 # -- the order ---------------------------------------------------------------
 
 
-def test_a_definition_outranks_a_shape_placed_after_it():
-    text = "d number:(R) = R R\nt Lex (\n d Digit = 0-9\n d Int = number:(Digit)\n)"
-    # `number:(…)` is defined, so the grammar's definition is found first.
-    assert not isinstance(rule_of(text, "Int"), MacroCall)
+SHADOWED = "d number:(R) = R R\nt Lex (\n d Digit = 0-9\n d Int = number:(Digit)\n)"
 
 
-def test_a_shape_placed_first_hides_a_definition_of_the_same_name():
-    text = "t Lex (\n d Digit = 0-9\n d Int = number:(Digit)\n)"
-    first = [CAPTURE] + rule_tree_macros()
-    assert isinstance(rule_of(text, "Int", macros=first), MacroCall)
+def test_a_registered_shape_outranks_a_definition_of_the_same_name():
+    # `extra_macros` places a backend's shapes above every name, so the grammar
+    # defining `number:(R)` does not take the shape away from the backend.
+    assert isinstance(rule_of(SHADOWED, "Int"), MacroCall)
+
+
+def test_a_shape_placed_after_the_names_yields_to_a_definition():
+    # The order is what decides, and a caller assembling one by hand may still
+    # put a shape below the point at which the grammar's own names are found.
+    order = rule_tree_macros()
+    scoped = next(index for index, macro in enumerate(order) if isinstance(macro, Scoped))
+    below = order[: scoped + 1] + [CAPTURE] + order[scoped + 1 :]
+    assert not isinstance(rule_of(SHADOWED, "Int", macros=below), MacroCall)
