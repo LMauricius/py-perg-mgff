@@ -22,7 +22,7 @@ from ..grammar.shapes import MacroShape
 from ..grammar.signatures import shape
 from ..lexing.cst import Item
 from ..semantics.context import CallContext
-from .rules import MacroCall, Node
+from .rules import MacroCall, Rule
 from .categories import CATEGORY_NAMES
 from .charset import CharacterSet, parse_character_set
 
@@ -76,7 +76,7 @@ def _character_macro(macro_shape: MacroShape) -> MacroDefinition:
     """
     definition: MacroDefinition
 
-    def produce_call(context: CallContext, item: Item, text: str) -> Node | None:
+    def produce_call(context: CallContext, item: Item, text: str) -> Rule | None:
         # The pattern is a shape and cannot compare the ends of a range, so `9-0`
         # reaches this point and is declined here. It goes on to be read as a
         # name, and is reported as an unknown one.
@@ -95,7 +95,7 @@ CHARACTER = _character_macro(CHARACTER_SHAPE)
 CHARACTER_MACROS = frozenset({CHARACTER_SET, CHARACTER})
 
 
-def character_set_of(node: Node) -> CharacterSet | None:
+def character_set_of(node: Rule) -> CharacterSet | None:
     """The set a node matches one character from, or None for any other node."""
     if isinstance(node, MacroCall) and node.macro in CHARACTER_MACROS:
         return parse_character_set(node.item.text)

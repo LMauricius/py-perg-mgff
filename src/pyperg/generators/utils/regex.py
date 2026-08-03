@@ -18,15 +18,20 @@ Two things a regular expression cannot express are reported rather than faked:
 A `MacroCall` of any macro but a character set belongs to whoever defined that
 macro, so `regex_of` takes an optional `emit` for those and returns None without
 one.
+
+A backend that solves its own recursion — the regex backend does, by Arden's
+rule — hands the patterns it has already worked out to `regex_of` as `patterns`,
+and builds the rest with `concatenation`, `alternation` and `atom`, which bracket
+what they join exactly as `regex_of` does.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 
 from ...mgff.common.characters import character_set_of
 from ...mgff.common.charset import CharacterPart, CharacterSet
-from ...mgff.common.rules import Choice, MacroCall, Node, Repetition, Sequence
+from ...mgff.common.rules import Choice, MacroCall, Rule, Repetition, Sequence
 from ...mgff.semantics.model import Production
 
 #: Characters that need a backslash outside a character class.
@@ -39,7 +44,7 @@ Lookup = Callable[[str], Production | None]
 
 #: Emits a macro call the backend registered itself, given the call and a way to
 #: turn its arguments into patterns. None means "no regular form".
-Emit = Callable[[MacroCall, Callable[[Node], str | None]], str | None]
+Emit = Callable[[MacroCall, Callable[[Rule], str | None]], str | None]
 
 
 # -- characters ------------------------------------------------------------
@@ -97,56 +102,95 @@ def character_class(characters: CharacterSet) -> str:
 # -- rule trees ------------------------------------------------------------
 
 
-def regex_of(node: Node, lookup: Lookup, emit: Emit | None = None) -> str | None:
+def regex_of(
+    node: Rule,
+    lookup: Lookup,
+    emit: Emit | None = None,
+    patterns: Mapping[str, str] | None = None,
+) -> str | None:
     """A rule tree as a regular expression, or None when it has no regular form.
 
-    References are inlined through `lookup`; a reference that leads back to
-    itself, or to a name the lookup does not know, gives None. `emit` handles the
-    macro calls this module knows nothing of.
+    A reference is answered by `patterns` when it names one, and inlined through
+    `lookup` otherwise; a reference that leads back to itself, or to a name
+    neither knows, gives None. `emit` handles the macro calls this module knows
+    nothing of.
     """
-    return _regex(node, lookup, emit, seen=frozenset())
+    return _regex(node, lookup, emit, patterns or {}, seen=frozenset())
 
 
-def _regex(node: Node, lookup: Lookup, emit: Emit | None, seen: frozenset[str]) -> str | None:
+def _regex(
+    node: Rule,
+    lookup: Lookup,
+    emit: Emit | None,
+    patterns: Mapping[str, str],
+    seen: frozenset[str],
+) -> str | None:
+    def inner(sub: Rule) -> str | None:
+        return _regex(sub, lookup, emit, patterns, seen)
+
     if isinstance(node, MacroCall):
         characters = character_set_of(node)
         if characters is not None:
             return character_class(characters)
         if emit is None:
             return None
-        return emit(node, lambda inner: _regex(inner, lookup, emit, seen))
+        return emit(node, inner)
 
     if isinstance(node, Sequence):
         pieces: list[str] = []
         for item in node.items:
-            piece = _regex(item, lookup, emit, seen)
+            piece = inner(item)
             if piece is None:
                 return None
             pieces.append(piece)
-        return "".join(_grouped_for_sequence(piece) for piece in pieces)
+        return concatenation(pieces)
 
     if isinstance(node, Repetition):
-        body = _regex(node.body, lookup, emit, seen)
+        body = inner(node.body)
         if body is None:
             return None
-        return _atom(body) + _quantifier(node.minimum, node.maximum)
+        return atom(body) + _quantifier(node.minimum, node.maximum)
 
     if isinstance(node, Choice):
         options: list[str] = []
         for option in node.options:
-            pattern = _regex(option, lookup, emit, seen)
+            pattern = inner(option)
             if pattern is None:
                 return None
             options.append(pattern)
-        return _alternation(options, node.symbol)
+        return alternation(options, node.symbol)
 
-    # A reference: inline the production it names, once.
+    # A reference: the pattern already worked out for it, or the production it
+    # names, inlined once.
+    if node.name in patterns:
+        return patterns[node.name]
     if node.name in seen:
         return None
     production = lookup(node.name)
     if production is None:
         return None
-    return _regex(production.rule, lookup, emit, seen | {node.name})
+    return _regex(production.rule, lookup, emit, patterns, seen | {node.name})
+
+
+# -- putting patterns together ---------------------------------------------
+
+
+def concatenation(pieces: list[str]) -> str:
+    """Patterns matched one after another, each bracketed where it must be."""
+    return "".join(_grouped_for_sequence(piece) for piece in pieces)
+
+
+def alternation(options: list[str], symbol: str = "/") -> str:
+    """Options as one alternation, ordered by the choice's preference mode.
+
+    `/` keeps the written order. `|` wants the longest match, which alternation
+    cannot express, so the longest fixed option goes first — enough to make `<=`
+    win over `<`.
+    """
+    if len(options) == 1:
+        return options[0]
+    ordered = options if symbol == "/" else sorted(options, key=_fixed_length, reverse=True)
+    return "(?:" + "|".join(ordered) + ")"
 
 
 def _quantifier(minimum: int, maximum: int | None) -> str:
@@ -162,17 +206,6 @@ def _quantifier(minimum: int, maximum: int | None) -> str:
     if minimum == maximum:
         return f"{{{minimum}}}"
     return f"{{{minimum},{maximum}}}"
-
-
-def _alternation(options: list[str], symbol: str) -> str:
-    """Options as one alternation, ordered by the choice's preference mode.
-
-    `/` keeps the written order. `|` wants the longest match, which alternation
-    cannot express, so the longest fixed option goes first — enough to make `<=`
-    win over `<`.
-    """
-    ordered = options if symbol == "/" else sorted(options, key=_fixed_length, reverse=True)
-    return "(?:" + "|".join(ordered) + ")"
 
 
 def _fixed_length(pattern: str) -> int:
@@ -198,7 +231,7 @@ def _fixed_length(pattern: str) -> int:
     return length
 
 
-def _atom(pattern: str) -> str:
+def atom(pattern: str) -> str:
     """A pattern wrapped so a quantifier applies to the whole of it."""
     return pattern if _is_atomic(pattern) else f"(?:{pattern})"
 
@@ -206,7 +239,7 @@ def _atom(pattern: str) -> str:
 def _grouped_for_sequence(pattern: str) -> str:
     """A pattern wrapped only where concatenation would change its meaning.
 
-    `_alternation` already brackets what it builds, so this is about nothing
+    `alternation` already brackets what it builds, so this is about nothing
     else; the check stays for patterns a caller assembled itself.
     """
     return f"(?:{pattern})" if "|" in pattern and not _is_atomic(pattern) else pattern

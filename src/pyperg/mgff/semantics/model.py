@@ -36,7 +36,7 @@ from ..grammar.scope import MacroSource, Scope, TargetScope, signature_of
 from ..lexing.cst import File, Group, Item, group_items, render_item
 from .attributes import collect_attributes
 from .context import CallContext
-from ..common.nodes import Choice, Node, Reference, Sequence
+from ..common.rules import Choice, Rule, Reference, Sequence
 
 #: Targets known to match textual characters throughout, so a rule of theirs is
 #: never anything but characters. Other targets may still spell a terminal as a
@@ -57,7 +57,7 @@ class Production:
     """A macro a target treats as a matching rule."""
 
     name: str
-    alternatives: list[Node] = field(default_factory=list)
+    alternatives: list[Rule] = field(default_factory=list)
     choice_symbol: str | None = (
         None  # `/` order-based, `|` length-based, None if single
     )
@@ -69,7 +69,7 @@ class Production:
     origin: str = ""
 
     @property
-    def rule(self) -> Node:
+    def rule(self) -> Rule:
         """The production's alternatives as one node."""
         if len(self.alternatives) == 1:
             return self.alternatives[0]
@@ -93,6 +93,10 @@ class GrammarModel:
 
     name: str
     targets: list[Target] = field(default_factory=list)
+    #: The macros written outside every target, resolved as a target of their
+    #: own. A grammar generating one thing needs no phases at all, and a backend
+    #: such as the regular-expression one reads only this.
+    globals: Target = field(default_factory=lambda: Target(name=""))
     #: File-scope attribute-only macros, by name, e.g. `Language` -> its attributes.
     metadata: dict[str, dict[str, list[str]]] = field(default_factory=dict)
 
@@ -126,6 +130,9 @@ def resolve(file: File, name: str, macros: list[Macro]) -> GrammarModel:
             resolve_target(macros, target_name, scope_target, earlier)
         )
         earlier.append(scope_target)
+    # The file scope resolves on its own, and after the targets: its macros see
+    # nothing but each other, since a scope is searched outwards only.
+    model.globals = resolve_target(macros, "", grammar, [])
     model.metadata = _resolve_metadata(grammar)
     return model
 
@@ -175,16 +182,22 @@ def defined_macro_factory(source: MacroSource) -> ProduceCall:
 def resolve_target(
     macros: list[Macro],
     name: str,
-    scope_target: TargetScope,
+    scope_target: Scope,
     earlier: list[TargetScope],
 ) -> Target:
-    """Resolve every production one target owns or reaches."""
+    """Resolve every production one target owns or reaches.
+
+    The file scope is resolved through this too, under the empty name, which is
+    what a grammar written without targets amounts to.
+    """
     target = Target(name=name, matches_characters=name in CHARACTER_TARGETS)
     resolver = _Resolver(macros, target, earlier)
     # Seed with the macros written directly in the target; references then pull
-    # in whatever else they reach, including macros shared outside it.
+    # in whatever else they reach, including macros shared outside it. A macro
+    # carrying parameters is not seeded: its body is written in terms of names
+    # only a call supplies, so it means nothing until one is made.
     for source in list(scope_target.sources.values()):
-        if not source.matches_nothing:
+        if not source.matches_nothing and not source.parameters:
             resolver.require(source)
     resolver.run()
     return target
@@ -252,12 +265,12 @@ class _Resolver:
 
     # -- item to node ------------------------------------------------------
 
-    def sequence(self, items: list[Item], scope: Scope, depth: int) -> Node:
+    def sequence(self, items: list[Item], scope: Scope, depth: int) -> Rule:
         """A run of items as one node, unwrapped when there is only one."""
         nodes = [self.node(item, scope, depth) for item in items]
         return nodes[0] if len(nodes) == 1 else Sequence(nodes)
 
-    def node(self, item: Item, scope: Scope, depth: int) -> Node:
+    def node(self, item: Item, scope: Scope, depth: int) -> Rule:
         """One item as a node, read through the macros in force.
 
         They are tried in order, and the first definition that does not decline
@@ -293,7 +306,7 @@ class _Resolver:
         arguments: dict[str, object],
         scope: Scope,
         depth: int,
-    ) -> Node | None:
+    ) -> Rule | None:
         """Call a definition, with the rules among its arguments read first.
 
         A group is a rule, so it is resolved before the call is made and a macro
@@ -310,7 +323,7 @@ class _Resolver:
             for name, value in arguments.items()
         }
         context = CallContext(scope=scope, depth=depth, resolver=self)
-        return cast("Node | None", produce_call(context, **read))
+        return cast("Rule | None", produce_call(context, **read))
 
     def produced(self, value: object, scope: Scope, depth: int) -> object:
         """A group as the rule it holds; anything else unchanged."""
@@ -340,7 +353,7 @@ class _Resolver:
 
     def call_defined(
         self, source: MacroSource, context: CallContext, arguments: dict[str, object]
-    ) -> Node:
+    ) -> Rule:
         """A call of one of the grammar's own definitions.
 
         An argument-less one is linked rather than expanded, so a recursive

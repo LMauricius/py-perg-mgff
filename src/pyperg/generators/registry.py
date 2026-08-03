@@ -27,6 +27,7 @@ BUILTIN_GENERATORS: dict[str, str] = {
     "dump": "pyperg.generators.dump:DumpGenerator",
     "kate": "pyperg.generators.kate:KateGenerator",
     "python": "pyperg.generators.python:PythonGenerator",
+    "regex": "pyperg.generators.regex:RegexGenerator",
 }
 
 

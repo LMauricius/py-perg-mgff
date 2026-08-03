@@ -11,7 +11,7 @@ from pyperg.mgff.lexing.cst import Item
 from pyperg.mgff.lexing.lexer import lex_text
 from pyperg.mgff.common.order import rule_tree_macros
 from pyperg.mgff.semantics.context import CallContext
-from pyperg.mgff.common.rules import MacroCall, Node, Reference, Repetition
+from pyperg.mgff.common.rules import MacroCall, Rule, Reference, Repetition
 from pyperg.mgff.semantics.model import resolve
 
 def capture_args(item: Item, match: re.Match[str]) -> dict[str, object]:
@@ -24,8 +24,8 @@ def capture_args(item: Item, match: re.Match[str]) -> dict[str, object]:
 
 
 def produce_capture(
-    context: CallContext, item: Item, name: str, body: Node
-) -> Node:
+    context: CallContext, item: Item, name: str, body: Rule
+) -> Rule:
     """A stand-in for what a backend defines: a group carrying a name.
 
     The context goes unread, as it does for most macros: a capture means the

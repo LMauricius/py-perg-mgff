@@ -19,6 +19,7 @@ pyperg = "pyperg.cli.main:main"
 dump = "pyperg.generators.dump:DumpGenerator"
 kate = "pyperg.generators.kate:KateGenerator"
 python = "pyperg.generators.python:PythonGenerator"
+regex = "pyperg.generators.regex:RegexGenerator"
 
 [project.optional-dependencies]
 dev = ["pytest>=7"]

@@ -32,7 +32,7 @@ from dataclasses import dataclass
 
 from ...diagnostics.errors import GeneratorError
 from ...mgff.common.characters import character_set_of
-from ...mgff.common.rules import Node, Repetition, Sequence
+from ...mgff.common.rules import Rule, Repetition, Sequence
 from ...mgff.semantics.model import Production
 from ..utils.naming import NameAllocator, safe_identifier
 from ..utils.regex import regex_of
@@ -127,7 +127,7 @@ class RuleBuilder:
         return [self.rule_for(alternative, where) for alternative in alternatives]
 
     def keyword_rule(
-        self, alternatives: list[Node], where: RuleContext, name: str
+        self, alternatives: list[Rule], where: RuleContext, name: str
     ) -> Element | None:
         """One `keyword` rule for a choice of plain words, or None.
 
@@ -145,7 +145,7 @@ class RuleBuilder:
 
     # -- single rules ------------------------------------------------------
 
-    def rule_for(self, node: Node, where: RuleContext) -> Element:
+    def rule_for(self, node: Rule, where: RuleContext) -> Element:
         """The cheapest Kate rule matching a rule tree.
 
         Raises `GeneratorError` when the tree has no regular form, which for
@@ -166,7 +166,7 @@ class RuleBuilder:
             )
         return where.applied_to("RegExpr", String=pattern)
 
-    def spaces_rule(self, node: Node, where: RuleContext) -> Element | None:
+    def spaces_rule(self, node: Rule, where: RuleContext) -> Element | None:
         """`DetectSpaces` for a run of whitespace of any length."""
         if not isinstance(node, Repetition) or node.minimum > 1:
             return None
@@ -180,7 +180,7 @@ class RuleBuilder:
             return None
         return where.applied_to("DetectSpaces")
 
-    def literal_rule(self, node: Node, where: RuleContext) -> Element | None:
+    def literal_rule(self, node: Rule, where: RuleContext) -> Element | None:
         """`DetectChar`, `Detect2Chars`, `WordDetect` or `StringDetect`."""
         literal = literal_of(node)
         if literal is None or not literal:
@@ -192,7 +192,7 @@ class RuleBuilder:
         tag = "WordDetect" if is_word_bounded(literal) else "StringDetect"
         return where.applied_to(tag, String=literal)
 
-    def any_char_rule(self, node: Node, where: RuleContext) -> Element | None:
+    def any_char_rule(self, node: Rule, where: RuleContext) -> Element | None:
         """`AnyChar` for one character out of a fixed handful."""
         characters = character_set_of(node)
         if characters is None:
@@ -215,7 +215,7 @@ class RuleBuilder:
         return elements
 
 
-def _fuse(node: Node) -> Node:
+def _fuse(node: Rule) -> Rule:
     """Merge the single-character runs of a node, so literals become strings."""
     parts = flatten(node)
     if len(parts) < 2:
@@ -224,7 +224,7 @@ def _fuse(node: Node) -> Node:
     return fused[0] if len(fused) == 1 else Sequence(fused)
 
 
-def _literal_length(node: Node) -> int:
+def _literal_length(node: Rule) -> int:
     """How long the fixed string a node matches is, or -1 when it is not fixed."""
     literal = literal_of(_fuse(node))
     return len(literal) if literal is not None else -1

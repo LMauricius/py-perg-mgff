@@ -3,14 +3,14 @@
 from .attributes import collect_attributes, parse_attribute
 from .context import CallContext
 from .model import GrammarModel, Production, Target, resolve
-from ..common.rules import Choice, MacroCall, Node, Reference, Repetition, Sequence
+from ..common.rules import Choice, MacroCall, Rule, Reference, Repetition, Sequence
 
 __all__ = [
     "CallContext",
     "Choice",
     "GrammarModel",
     "MacroCall",
-    "Node",
+    "Rule",
     "Production",
     "Reference",
     "Repetition",

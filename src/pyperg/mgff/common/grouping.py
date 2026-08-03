@@ -21,7 +21,7 @@ from ..grammar.shapes import MacroShape
 from ..grammar.signatures import shape
 from ..lexing.cst import Item
 from ..semantics.context import CallContext
-from .rules import Choice, Node, Repetition
+from .rules import Choice, Rule, Repetition
 
 #: How many times each marker repeats its body.
 REPETITION_MARKERS: dict[str, tuple[int, int | None]] = {
@@ -66,18 +66,18 @@ CHOICE_SHAPE: MacroShape = shape(
 # -- what they produce ------------------------------------------------------
 
 
-def _subgroup(context: CallContext, body: Node) -> Node:
+def _subgroup(context: CallContext, body: Rule) -> Rule:
     """`( … )`: the group's own lines, joined into one rule."""
     return body
 
 
-def _repetition(context: CallContext, body: Node, marker: str) -> Node:
+def _repetition(context: CallContext, body: Rule, marker: str) -> Rule:
     """`( R )+`, `( R )*`, `( R )?`."""
     minimum, maximum = REPETITION_MARKERS[marker]
     return Repetition(body, minimum, maximum, marker)
 
 
-def _choice(context: CallContext, options: list[Node], symbol: str) -> Node:
+def _choice(context: CallContext, options: list[Rule], symbol: str) -> Rule:
     """`(O1)|(O2)|…` and `(O1)/(O2)/…`, an inline choice."""
     return Choice(options, symbol)
 

@@ -1,0 +1,14 @@
+# A grammar matching a "key = value" setting line, for the regex backend.
+
+d Space = ( \_|\t )*
+
+d Word = ( a-z|A-Z|_ )+
+
+# right-linear recursion: the same as ( 0-9 )+
+d Digits = 0-9 Digits
+         / 0-9
+
+d Value = Digits
+        / Word
+
+d Match = Space key:( Word ) Space = Space value:( Value ) Space

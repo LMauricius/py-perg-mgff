@@ -22,14 +22,14 @@ from ...mgff.common.characters import character_set_of
 from ...mgff.common.rules import (
     Choice,
     MacroCall,
-    Node,
+    Rule,
     Reference,
     Repetition,
     Sequence,
 )
 from ...mgff.semantics.model import Production
 
-def walk(node: Node) -> Iterator[Node]:
+def walk(node: Rule) -> Iterator[Rule]:
     """Every node of a tree, the node itself first."""
     yield node
     if isinstance(node, Sequence):
@@ -45,12 +45,12 @@ def walk(node: Node) -> Iterator[Node]:
             yield from walk(argument)
 
 
-def references(node: Node) -> list[str]:
+def references(node: Rule) -> list[str]:
     """The names a rule calls, in order, with repeats kept."""
     return [found.name for found in walk(node) if isinstance(found, Reference)]
 
 
-def nullable(node: Node, lookup: Callable[[str], Production | None]) -> bool:
+def nullable(node: Rule, lookup: Callable[[str], Production | None]) -> bool:
     """Whether a rule can match nothing at all.
 
     A reference is followed through `lookup`; a reference that leads nowhere, or
@@ -61,7 +61,7 @@ def nullable(node: Node, lookup: Callable[[str], Production | None]) -> bool:
 
 
 def _nullable(
-    node: Node, lookup: Callable[[str], Production | None], seen: set[str]
+    node: Rule, lookup: Callable[[str], Production | None], seen: set[str]
 ) -> bool:
     if isinstance(node, MacroCall):
         # A character set consumes a character. Any other macro is nullable only
@@ -88,7 +88,7 @@ def _nullable(
     return _nullable(production.rule, lookup, seen | {node.name})
 
 
-def flatten(node: Node) -> list[Node]:
+def flatten(node: Rule) -> list[Rule]:
     """A node as a flat sequence, with nested sequences merged in.
 
     Sequences nest freely — a subgroup inside a subgroup — and nesting says
@@ -97,13 +97,13 @@ def flatten(node: Node) -> list[Node]:
     """
     if not isinstance(node, Sequence):
         return [node]
-    out: list[Node] = []
+    out: list[Rule] = []
     for item in node.items:
         out.extend(flatten(item))
     return out
 
 
-def single_character(node: Node) -> str | None:
+def single_character(node: Rule) -> str | None:
     """The one character a node matches, or None when it matches anything else."""
     characters = character_set_of(node)
     if characters is not None:
@@ -113,7 +113,7 @@ def single_character(node: Node) -> str | None:
     return None
 
 
-def literal_of(node: Node) -> str | None:
+def literal_of(node: Rule) -> str | None:
     """The fixed string a node matches, or None when it is not a fixed string.
 
     `< =` gives `"<="`; a range, a repetition or a reference gives None.
@@ -130,14 +130,14 @@ def literal_of(node: Node) -> str | None:
     return "".join(characters)
 
 
-def fuse_literals(nodes: list[Node]) -> list[Node]:
+def fuse_literals(nodes: list[Rule]) -> list[Rule]:
     """Merge runs of single-character nodes into one `Sequence` each.
 
     The result is still a list of nodes; what changes is that a run that spells
     a string is now one node, which `literal_of` reports as that string.
     """
-    fused: list[Node] = []
-    run: list[Node] = []
+    fused: list[Rule] = []
+    run: list[Rule] = []
 
     def flush() -> None:
         """Close the run in progress, unwrapping a run of one."""
