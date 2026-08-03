@@ -21,7 +21,7 @@ from ..grammar.shapes import MacroShape
 from ..grammar.signatures import shape
 from ..lexing.cst import Item
 from ..semantics.context import CallContext
-from ..semantics.nodes import Choice, Node, Repetition
+from .rules import Choice, Node, Repetition
 
 #: How many times each marker repeats its body.
 REPETITION_MARKERS: dict[str, tuple[int, int | None]] = {

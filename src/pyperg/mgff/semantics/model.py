@@ -36,7 +36,7 @@ from ..grammar.scope import MacroSource, Scope, TargetScope, signature_of
 from ..lexing.cst import File, Group, Item, group_items, render_item
 from .attributes import collect_attributes
 from .context import CallContext
-from .nodes import Choice, Node, Reference, Sequence
+from ..common.nodes import Choice, Node, Reference, Sequence
 
 #: Targets known to match textual characters throughout, so a rule of theirs is
 #: never anything but characters. Other targets may still spell a terminal as a

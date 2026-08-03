@@ -19,7 +19,14 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator
 
 from ...mgff.common.characters import character_set_of
-from ...mgff.semantics.nodes import Choice, MacroCall, Node, Reference, Repetition, Sequence
+from ...mgff.common.rules import (
+    Choice,
+    MacroCall,
+    Node,
+    Reference,
+    Repetition,
+    Sequence,
+)
 from ...mgff.semantics.model import Production
 
 def walk(node: Node) -> Iterator[Node]:

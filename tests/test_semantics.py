@@ -12,7 +12,7 @@ from pyperg.mgff.lexing.lexer import lex_text
 from pyperg.mgff.common.order import rule_tree_macros
 from pyperg.mgff.common.categories import is_category_name
 from pyperg.mgff.common.charset import parse_character_set
-from pyperg.mgff.semantics.nodes import Choice, MacroCall, Reference, Repetition, Sequence
+from pyperg.mgff.common.rules import Choice, MacroCall, Reference, Repetition, Sequence
 from pyperg.mgff.semantics.model import resolve
 
 def read_fixture(name: str) -> str:

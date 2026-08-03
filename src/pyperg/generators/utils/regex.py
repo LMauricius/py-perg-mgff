@@ -26,7 +26,7 @@ from collections.abc import Callable
 
 from ...mgff.common.characters import character_set_of
 from ...mgff.common.charset import CharacterPart, CharacterSet
-from ...mgff.semantics.nodes import Choice, MacroCall, Node, Repetition, Sequence
+from ...mgff.common.rules import Choice, MacroCall, Node, Repetition, Sequence
 from ...mgff.semantics.model import Production
 
 #: Characters that need a backslash outside a character class.

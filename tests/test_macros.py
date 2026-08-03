@@ -11,7 +11,7 @@ from pyperg.mgff.lexing.cst import Item
 from pyperg.mgff.lexing.lexer import lex_text
 from pyperg.mgff.common.order import rule_tree_macros
 from pyperg.mgff.semantics.context import CallContext
-from pyperg.mgff.semantics.nodes import MacroCall, Node, Reference, Repetition
+from pyperg.mgff.common.rules import MacroCall, Node, Reference, Repetition
 from pyperg.mgff.semantics.model import resolve
 
 def capture_args(item: Item, match: re.Match[str]) -> dict[str, object]:

@@ -5,7 +5,7 @@ import pytest
 from pyperg.mgff.lexing.lexer import lex_text
 from pyperg.mgff.common.characters import CHARACTER_SET
 from pyperg.mgff.common.charset import parse_character_set
-from pyperg.mgff.semantics.nodes import Choice, MacroCall, Reference, Repetition, Sequence
+from pyperg.mgff.common.rules import Choice, MacroCall, Reference, Repetition, Sequence
 from pyperg.mgff.semantics.model import Production
 from pyperg.generators.utils.emit import Emitter
 from pyperg.generators.utils.graph import (

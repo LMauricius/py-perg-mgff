@@ -1,12 +1,12 @@
 """The rule tree a production's alternatives are built from.
 
-Five node kinds, of which only two are named by MGFF itself:
+Five rule kinds, of which only two are named by MGFF itself:
 
     Sequence     items matched one after another
     Repetition   a body matched a number of times
     Choice       one of several options, order- or length-based
     Reference    another production of the same target
-    MacroCall    a call whose macro builds no node of its own
+    MacroCall    a call whose macro builds no rule of its own
 
 `Repetition` and `Choice` are here because every generator needs them and the
 model may as well name them. A macro with nothing to add to that vocabulary —
@@ -27,14 +27,14 @@ from ..lexing.cst import Item
 class Sequence:
     """Items matched one after another. An empty sequence matches nothing."""
 
-    items: list["Node"] = field(default_factory=list)
+    items: list["Rule"] = field(default_factory=list)
 
 
 @dataclass(slots=True)
 class Repetition:
     """A body matched between `minimum` and `maximum` times, `None` for no limit."""
 
-    body: "Node"
+    body: "Rule"
     minimum: int
     maximum: int | None
     marker: str  # `+`, `*` or `?`, kept for round-tripping and messages
@@ -48,7 +48,7 @@ class Choice:
     longest match wins.
     """
 
-    options: list["Node"]
+    options: list["Rule"]
     symbol: str
 
 
@@ -75,7 +75,7 @@ class MacroCall:
 
     macro: MacroDefinition
     item: Item
-    arguments: list["Node"] = field(default_factory=list)
+    arguments: list["Rule"] = field(default_factory=list)
 
 
-Node = Sequence | Repetition | Choice | Reference | MacroCall
+Rule = Sequence | Repetition | Choice | Reference | MacroCall

@@ -28,11 +28,11 @@ from ...diagnostics.span import Position, Span
 from ..lexing.cst import File, Group, Line
 from .macros import MacroDefinition, ProduceCall
 from .scope import MacroSource, Scope, TargetScope, make_source
-from .signatures import definition_shape
+from .signatures import signature_to_shape
 
 #: Builds what a call of one `d` definition produces. Called once per definition,
 #: with the line as it was written, after all of its alternatives are in.
-Factory = Callable[[MacroSource], ProduceCall]
+ProduceCallFactory = Callable[[MacroSource], ProduceCall]
 
 # The first items that carry a role. Any other first item is an error.
 MARKERS = frozenset({"#", "d", "/", "|", ">", "t", "p"})
@@ -58,7 +58,7 @@ def marker_of(line: Line) -> str | None:
     return first.text
 
 
-def parse(file: File, factory: Factory | None = None) -> Scope:
+def parse(file: File, factory: ProduceCallFactory | None = None) -> Scope:
     """Read a lexed file as the scope it describes.
 
     `factory` says what a call of each definition produces; without one the
@@ -92,7 +92,9 @@ def _covering_span(lines: list[Line]) -> Span:
     return Span.between(lines[0].span, lines[-1].span) if lines else _EMPTY_SPAN
 
 
-def _parse_lines(lines: list[Line], scope: Scope, factory: Factory) -> None:
+def _parse_lines(
+    lines: list[Line], scope: Scope, custom_produce_call_factory: ProduceCallFactory
+) -> None:
     """Walk the lines of one scope, dispatching on each line's first item.
 
     The macro of the last `d` line stays current across comment lines, so the
@@ -140,20 +142,22 @@ def _parse_lines(lines: list[Line], scope: Scope, factory: Factory) -> None:
 
         # `t Name ( … )` and `p Prefix ( … )`: a nested scope.
         else:
-            _parse_nested_scope(line, marker, scope, factory)
+            _parse_nested_scope(line, marker, scope, custom_produce_call_factory)
             current, closed = None, False
 
     # The alternatives of a `d` line arrive one line at a time, so a definition
     # is built only once the whole scope has been read.
     for source in read:
-        scope.define(source, _define(source, factory))
+        scope.define(source, _source_to_definition(source, custom_produce_call_factory))
 
 
-def _define(source: MacroSource, factory: Factory) -> MacroDefinition:
+def _source_to_definition(
+    source: MacroSource, custom_produce_call_factory: ProduceCallFactory
+) -> MacroDefinition:
     """Build one definition: its shape from the head, its body from the factory."""
     return MacroDefinition(
-        shape=definition_shape(source.signature, source.parameters),
-        produce_call=factory(source),
+        shape=signature_to_shape(source.signature, source.parameters),
+        produce_call=custom_produce_call_factory(source),
     )
 
 
@@ -212,7 +216,7 @@ def _add_option(
 
 
 def _parse_nested_scope(
-    line: Line, marker: str, parent: Scope, factory: Factory
+    line: Line, marker: str, parent: Scope, factory: ProduceCallFactory
 ) -> None:
     """Read a `t Name ( … )` or `p Prefix ( … )` line and its contents.
 

@@ -32,7 +32,7 @@ from dataclasses import dataclass
 
 from ...diagnostics.errors import GeneratorError
 from ...mgff.common.characters import character_set_of
-from ...mgff.semantics.nodes import Node, Repetition, Sequence
+from ...mgff.common.rules import Node, Repetition, Sequence
 from ...mgff.semantics.model import Production
 from ..utils.naming import NameAllocator, safe_identifier
 from ..utils.regex import regex_of

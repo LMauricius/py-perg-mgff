@@ -50,7 +50,7 @@ ARGUMENTS_PATTERN = rf"{NAME_PATTERN}(?:\(\){NAME_PATTERN})+"
 # -- the shape of a grammar's own definition -------------------------------
 
 
-def definition_shape(signature: str, parameters: list[str]) -> MacroShape:
+def signature_to_shape(signature: str, parameters: list[str]) -> MacroShape:
     """The shape a `d Head = Body` line answers to.
 
     The pattern is the head's signature, matched exactly, and the dictionary

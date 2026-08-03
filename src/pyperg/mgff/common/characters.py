@@ -22,7 +22,7 @@ from ..grammar.shapes import MacroShape
 from ..grammar.signatures import shape
 from ..lexing.cst import Item
 from ..semantics.context import CallContext
-from ..semantics.nodes import MacroCall, Node
+from .rules import MacroCall, Node
 from .categories import CATEGORY_NAMES
 from .charset import CharacterSet, parse_character_set
 
