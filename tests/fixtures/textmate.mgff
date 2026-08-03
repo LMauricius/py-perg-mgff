@@ -1,0 +1,68 @@
+# A small language, written to exercise the TextMate backend.
+# Deliberately the same shape as `kate.mgff`, so the two backends can be read
+# against each other, plus the settings only an editor extension needs.
+
+d Language > name(Toy) extensions(*.toy) mimetype(text/x-toy)
+           > lineComment(#) blockComment(#{ #})
+           > description(Toy language support, generated from MGFF.)
+
+# A named list of attributes, reused by the macros below.
+d Highlighted > autoclass
+
+t Lex (
+
+    d Digit  = 0-9
+    d Letter = Letter|_
+    d AlNum  = Letter|Decimal_Number|_
+
+    d Space = ( \_|\t )+
+        > class(Normal)
+
+    # Fixed words, which must not match inside a longer word.
+    d Keyword = l e t
+              | i f
+              | e l s e
+              | w h i l e
+        > class(Keyword)
+
+    d Ident = Letter ( AlNum )*
+        > Highlighted
+
+    d Number = ( Digit )+ ( . ( Digit )+ )?
+        > class(Float Literal)
+
+    d Comment = # ( Letter|Decimal_Number|\_|\t )*
+        > autoclass
+
+    # length-based: the two-character operators win over the one-character ones
+    d Op = < =
+         | > =
+         | = =
+         | +
+         | -
+         | *
+         | =
+        > class(Operator)
+
+    d LParen = \(
+        > class(Normal)
+
+    d RParen = \)
+        > class(Normal)
+
+    d File = ( (Space)/(Comment)/(Keyword)/(Number)/(Ident)/(Op)/(LParen)/(RParen) )*
+)
+
+t Parse (
+
+    # The bracketed alternative is what a highlighter can reproduce: it nests,
+    # and VS Code folds and auto-closes it.
+    d Atom = Number
+           / Ident
+           / \( Expr \)
+
+    d Expr = Atom Op Expr
+           / Atom
+
+    d File = ( Expr )*
+)

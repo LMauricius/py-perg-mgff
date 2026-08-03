@@ -45,17 +45,20 @@ import sys
 from ...diagnostics.errors import GeneratorError
 from ...mgff.semantics.model import GrammarModel, Production, Target
 from ..utils.classes import classes_of
-from ..utils.graph import reachable_from, reference_graph
-from ..utils.walk import flatten, fuse_literals, references, single_character
+from ..utils.highlight import (
+    START_PRODUCTION,
+    brackets_of,
+    reachable_productions,
+    token_order,
+)
+from ..utils.walk import flatten, fuse_literals, single_character
 from ..utils.xmlwrite import Element
 from .rules import RuleBuilder, RuleContext
 from .styles import FALLBACK_STYLE, style_for
 
-#: The macro both targets start at.
-START_PRODUCTION = "File"
-
-#: The names of the contexts this backend always builds.
-FILE_CONTEXT = "File"
+#: The names of the contexts this backend always builds. The initial one is
+#: named after the macro a target starts at, since that is what it stands for.
+FILE_CONTEXT = START_PRODUCTION
 GRAMMAR_CONTEXT = "Grammar"
 TOKENS_CONTEXT = "Tokens"
 
@@ -88,58 +91,6 @@ class ItemDatas:
 
 
 # -- reading the targets ---------------------------------------------------
-
-
-def start_of(target: Target) -> Production:
-    """A target's `File` production, which is where generation begins."""
-    production = target.productions.get(START_PRODUCTION)
-    if production is None:
-        raise GeneratorError(
-            f"target {target.name!r} has no `{START_PRODUCTION}` macro; "
-            f"the Kate backend starts there. Write `d {START_PRODUCTION} = …` "
-            "listing what the target matches."
-        )
-    return production
-
-
-def token_order(target: Target) -> list[str]:
-    """The token productions `File` names, in the order they were written.
-
-    Kate tries the rules of a context in order, so this order is the grammar's
-    say in which token wins where two could match.
-    """
-    ordered: list[str] = []
-    for name in references(start_of(target).rule):
-        if name not in ordered and name in target.productions:
-            ordered.append(name)
-    if not ordered:
-        raise GeneratorError(
-            f"`{START_PRODUCTION}` of target {target.name!r} names no productions; "
-            "it should list the tokens, as in `d File = ( Ident / Number / Space )*`"
-        )
-    return ordered
-
-
-def brackets_of(production: Production) -> tuple[str, str] | None:
-    """The fixed opening and closing characters a production wraps things in.
-
-    An alternative of one item brackets nothing and is ignored; every
-    alternative that holds more must open and close with the same pair, or the
-    production is not a bracketing one.
-    """
-    found: tuple[str, str] | None = None
-    for alternative in production.alternatives:
-        parts = fuse_literals(flatten(alternative))
-        if len(parts) < 2:
-            continue
-        opening = single_character(parts[0])
-        closing = single_character(parts[-1])
-        if opening is None or closing is None:
-            return None
-        if found is not None and found != (opening, closing):
-            return None
-        found = (opening, closing)
-    return found
 
 
 def loose_terminals(productions: list[Production]) -> list[str]:
@@ -244,15 +195,7 @@ class ContextBuilder:
         """
         if self.parse is None:
             return []
-        graph = reference_graph(self.parse.productions)
-        reachable = reachable_from(START_PRODUCTION, graph)
-        return [
-            production
-            for name, production in self.parse.productions.items()
-            if name in reachable
-            and name != START_PRODUCTION
-            and production.origin == PARSE_TARGET
-        ]
+        return reachable_productions(self.parse)
 
     def build_file_context(self) -> None:
         """The initial context: an entry point onto everything else."""

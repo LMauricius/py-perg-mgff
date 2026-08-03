@@ -23,7 +23,12 @@ nothing.
 
 from __future__ import annotations
 
+import re
+
 from ..utils.classes import FALLBACK_CLASS, canonical_class
+
+#: Anything that may not appear inside one segment of a scope name.
+_UNSAFE = re.compile(r"[^0-9a-z]+")
 
 #: The scope prefix each shared class stands for. `Normal` maps to nothing,
 #: which means the token keeps the editor's default colour.
@@ -68,7 +73,7 @@ def scope_segment(text: str) -> str:
     A scope name is lower case and separated by dots, so anything that would
     read as a separator becomes a hyphen, which TextMate allows.
     """
-    # lower-case, then replace every run of non-alphanumerics with `-`
+    return _UNSAFE.sub("-", text.lower()).strip("-")
 
 
 def scope_for(classes: list[str], language: str) -> str | None:
@@ -78,12 +83,25 @@ def scope_for(classes: list[str], language: str) -> str | None:
     follows as a segment of its own, and the language's identifier ends the
     path. `Normal` alone contributes nothing, so the token stays unscoped.
     """
-    # 1. canonicalise the classes, dropping the ones that name nothing known
-    #    into plain segments
-    # 2. prefix = the first known class's non-empty prefix, or "" if none
-    # 3. extras = every class that did not supply the prefix, as segments
-    # 4. no prefix and no extras -> None
-    # 5. otherwise join prefix, extras and the language identifier with `.`
+    prefix = ""
+    extras: list[str] = []
+    for name in classes:
+        known = canonical_class(name)
+        if known is not None:
+            mapped = SCOPE_PREFIXES.get(known, "")
+            # The first class a theme knows decides the colour; a later one has
+            # to settle for being a segment, the way Kate joins itemData names.
+            if mapped and not prefix:
+                prefix = mapped
+                continue
+            if known == FALLBACK_CLASS:
+                continue
+        segment = scope_segment(name)
+        if segment:
+            extras.append(segment)
+    if not prefix and not extras:
+        return None
+    return ".".join(part for part in (prefix, *extras, language) if part)
 
 
 def region_scope(name: str, language: str) -> str:
@@ -92,7 +110,7 @@ def region_scope(name: str, language: str) -> str:
     `meta.` is the conventional home for a span that is a structure rather than
     a token; no theme colours it, and every editor can still ask what it is in.
     """
-    # f"meta.{scope_segment(name)}.{language}"
+    return f"meta.{scope_segment(name)}.{language}"
 
 
 def punctuation_scope(name: str, language: str, edge: str) -> str:
@@ -101,4 +119,4 @@ def punctuation_scope(name: str, language: str, edge: str) -> str:
     `edge` is `begin` or `end`. This is what VS Code's bracket matching and
     several themes look for.
     """
-    # f"punctuation.section.{scope_segment(name)}.{edge}.{language}"
+    return f"punctuation.section.{scope_segment(name)}.{edge}.{language}"
