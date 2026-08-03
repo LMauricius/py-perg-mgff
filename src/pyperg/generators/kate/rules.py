@@ -37,29 +37,11 @@ from ...mgff.semantics.model import Production
 from ..utils.naming import NameAllocator, safe_identifier
 from ..utils.regex import regex_of
 from ..utils.walk import flatten, fuse_literals, literal_of
+from ..utils.words import is_word, is_word_bounded
 from ..utils.xmlwrite import Element
 
 #: The whitespace a `DetectSpaces` rule stands for.
 WHITESPACE = set(" \t\n\r\f\v")
-
-
-def is_word_character(char: str) -> bool:
-    """Whether Kate would treat the character as part of a word."""
-    return char.isalnum() or char == "_"
-
-
-def is_word(text: str) -> bool:
-    """Whether a fixed string is a word, so `WordDetect` may match it."""
-    return bool(text) and all(is_word_character(char) for char in text)
-
-
-def is_word_bounded(text: str) -> bool:
-    """Whether a fixed string begins and ends inside a word.
-
-    `WordDetect` only matches between word boundaries, so a string ending in
-    punctuation would never be found by it.
-    """
-    return bool(text) and is_word_character(text[0]) and is_word_character(text[-1])
 
 
 @dataclass(slots=True)

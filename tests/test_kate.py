@@ -147,7 +147,7 @@ def test_autoclass_derivation(macro, style):
 
 def test_an_unrecognised_name_falls_back_to_normal_with_a_warning(capsys):
     assert autoclass_for("Wibble", warn=True) == "Normal"
-    assert "no style matches" in capsys.readouterr().err
+    assert "no class matches" in capsys.readouterr().err
 
 
 def test_an_unknown_class_survives_in_the_item_data_name():

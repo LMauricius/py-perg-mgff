@@ -44,11 +44,12 @@ import sys
 
 from ...diagnostics.errors import GeneratorError
 from ...mgff.semantics.model import GrammarModel, Production, Target
+from ..utils.classes import classes_of
 from ..utils.graph import reachable_from, reference_graph
 from ..utils.walk import flatten, fuse_literals, references, single_character
 from ..utils.xmlwrite import Element
 from .rules import RuleBuilder, RuleContext
-from .styles import FALLBACK_STYLE, autoclass_for, style_for
+from .styles import FALLBACK_STYLE, style_for
 
 #: The macro both targets start at.
 START_PRODUCTION = "File"
@@ -64,25 +65,6 @@ PARSE_TARGET = "Parse"
 
 
 # -- token classes ---------------------------------------------------------
-
-
-def classes_of(production: Production) -> list[str]:
-    """The classes a production's token carries.
-
-    `class(…)` names them outright. `autoclass` derives one from the macro's
-    name. A production asking for neither is left unstyled, which is `Normal`.
-    """
-    if "class" in production.attributes:
-        classes = production.attributes["class"]
-        if not classes:
-            raise GeneratorError(
-                f"`class` on {production.name!r} needs at least one class, "
-                "as in `> class(Keyword)`"
-            )
-        return classes
-    if "autoclass" in production.attributes:
-        return [autoclass_for(production.name)]
-    return [FALLBACK_STYLE]
 
 
 class ItemDatas:
