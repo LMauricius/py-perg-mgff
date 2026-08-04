@@ -208,26 +208,74 @@ def _quantifier(minimum: int, maximum: int | None) -> str:
     return f"{{{minimum},{maximum}}}"
 
 
-def _fixed_length(pattern: str) -> int:
-    """How long a pattern's match is when it is fixed, else -1.
+def _class_end(pattern: str, start: int) -> int:
+    """Where the character class opening at `start` closes, or -1 if it does not.
 
-    Only a run of plain and escaped characters counts; anything with a
-    quantifier or an alternation has no fixed length and keeps its place.
+    A `]` is the closing bracket everywhere except in two places: straight after
+    the opening bracket, or straight after a negating `^`, where it is a literal
+    instead. `escape_in_class` never writes either, but a pattern a caller
+    assembled itself may.
     """
-    if any(char in pattern for char in "*+?{|"):
-        return -1
-    length, index = 0, 0
+    index = start + 1
+    if pattern[index : index + 1] == "^":
+        index += 1
+    if pattern[index : index + 1] == "]":
+        index += 1
     while index < len(pattern):
         if pattern[index] == "\\":
             index += 2
-        elif pattern[index] == "[":
-            closing = pattern.find("]", index + 1)
+            continue
+        if pattern[index] == "]":
+            return index
+        index += 1
+    return -1
+
+
+def _fixed_length(pattern: str) -> int:
+    """How many characters a pattern matches when that number is fixed, else -1.
+
+    A plain character, an escape and a character class each match exactly one;
+    an anchor matches none. Anything whose length depends on the input — a
+    quantifier, an alternation, a group — has no fixed length, and answering -1
+    sorts it behind every option that does: a variable-length option tried first
+    would match short and take the whole choice with it.
+
+    The scan is what makes this exact: a metacharacter only means what it says
+    where it is neither escaped nor inside a class, so the literal `\\+` is a
+    character like any other, `[+*]` is one character out of two, and `\\p{Lu}`
+    is one character however long its name is. Reading for those characters
+    without scanning would call all three of them variable-length, and a choice
+    of `\\+\\+` against `\\+` would then be ordered by nothing at all.
+    """
+    length, index = 0, 0
+    while index < len(pattern):
+        char = pattern[index]
+        if char == "\\":
+            if index + 1 >= len(pattern):
+                return -1  # a trailing backslash is no pattern
+            # A Unicode category carries its name in braces and is still one
+            # character; every other escape is the two characters it is written as.
+            if pattern[index + 1] in "pP" and pattern[index + 2 : index + 3] == "{":
+                closing = pattern.find("}", index + 3)
+                if closing == -1:
+                    return -1
+                index = closing + 1
+            else:
+                index += 2
+            length += 1
+        elif char == "[":
+            closing = _class_end(pattern, index)
             if closing == -1:
                 return -1
             index = closing + 1
+            length += 1
+        elif char in "()|*+?{":
+            return -1
+        elif char in "^$":
+            index += 1  # an anchor matches no characters
         else:
             index += 1
-        length += 1
+            length += 1
     return length
 
 

@@ -13,13 +13,13 @@ semantics (Part 2: scopes, targets, macros) and the built-in constructs of
 Part 3 (item shapes, character sets, expansion) all resolve into the model the
 backends read.
 
-| Backend | What it writes |
-| --- | --- |
-| `kate` | A KDE syntax definition, also read by pandoc. See [Docs/kate-generator.md](Docs/kate-generator.md). |
+| Backend    | What it writes                                                                                                                |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `kate`     | A KDE syntax definition, also read by pandoc. See [Docs/kate-generator.md](Docs/kate-generator.md).                           |
 | `textmate` | A TextMate grammar, packaged as a Visual Studio Code extension. See [Docs/textmate-generator.md](Docs/textmate-generator.md). |
-| `regex` | One regular expression, starting from the `Match` macro. See [Docs/regex-generator.md](Docs/regex-generator.md). |
-| `dump` | The resolved grammar as plain text, for inspection. |
-| `python` | Not written yet. |
+| `regex`    | One regular expression, starting from the `Match` macro. See [Docs/regex-generator.md](Docs/regex-generator.md).              |
+| `dump`     | The resolved grammar as plain text, for inspection.                                                                           |
+| `python`   | Not written yet.                                                                                                              |
 
 ## Install
 

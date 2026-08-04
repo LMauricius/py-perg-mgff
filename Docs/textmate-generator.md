@@ -373,7 +373,7 @@ plus the settings only an editor extension needs. Generating from it gives:
     "number":  { "name": "constant.numeric.float.literal.toy",
                  "match": "[0-9]+(?:\\.[0-9]+)?" },
     "ident":   { "name": "variable.other.toy", "match": "[\\p{L}_][\\p{L}\\p{Nd}_]*" },
-    "op":      { "name": "keyword.operator.toy", "match": "(?:<=|>=|==|-|=|\\+|\\*)" },
+    "op":      { "name": "keyword.operator.toy", "match": "(?:<=|>=|==|\\+|-|\\*|=)" },
     "lparen":  { "match": "\\(" },
     "rparen":  { "match": "\\)" }
   }

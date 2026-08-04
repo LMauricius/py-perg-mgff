@@ -16,7 +16,7 @@ from pyperg.generators.utils.graph import (
     topological_order,
 )
 from pyperg.generators.utils.naming import NameAllocator, pascal_case, safe_identifier, snake_case
-from pyperg.generators.utils.regex import character_class, regex_of
+from pyperg.generators.utils.regex import alternation, character_class, regex_of
 from pyperg.generators.utils.walk import fuse_literals, literal_of, nullable, references
 from pyperg.generators.utils.xmlwrite import Element, escape_attribute
 
@@ -141,6 +141,36 @@ def test_a_length_based_choice_puts_the_longest_option_first():
 def test_an_order_based_choice_keeps_the_written_order():
     rule = Choice([chars("<"), Sequence([chars("<"), chars("=")])], "/")
     assert regex_of(rule, lambda name: None) == "(?:<|<=)"
+
+
+def test_an_escaped_metacharacter_is_measured_as_the_character_it_is():
+    # `\+` is a literal `+`, so `++` is the longer option and has to come first.
+    rule = Choice([chars("+"), Sequence([chars("+"), chars("+")])], "|")
+    assert regex_of(rule, lambda name: None) == r"(?:\+\+|\+)"
+
+
+def test_options_of_the_same_length_keep_the_written_order():
+    assert alternation([r"\+", "-", r"\*", "="], "|") == r"(?:\+|-|\*|=)"
+
+
+@pytest.mark.parametrize(
+    "options, ordered",
+    [
+        # A character class matches one character, however many it lists.
+        (["[+*]", "ab"], "(?:ab|[+*])"),
+        # So does a Unicode category, however long its name.
+        ([r"\p{Lu}", "ab"], r"(?:ab|\p{Lu})"),
+        # A quantifier, an alternation and a group have no fixed length at all.
+        # Every option that has one is tried ahead of them, whichever way round
+        # they were written: a variable-length option would otherwise match
+        # short and take the whole choice with it.
+        (["ab", "c+"], "(?:ab|c+)"),
+        (["c+", "ab"], "(?:ab|c+)"),
+        (["(?:xy)", "ab"], "(?:ab|(?:xy))"),
+    ],
+)
+def test_a_length_based_choice_measures_what_it_can(options, ordered):
+    assert alternation(options, "|") == ordered
 
 
 # -- naming -----------------------------------------------------------------
