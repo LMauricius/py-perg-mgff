@@ -19,7 +19,7 @@ from pyperg.generators.utils.regex import regex_of
 from pyperg.mgff.lexing.lexer import lex_text
 from pyperg.mgff.semantics.model import resolve
 
-MGFF = Path(__file__).parent.parent / "examples" / "mgff-new.mgff"
+MGFF = Path(__file__).parent.parent / "examples" / "mgff.mgff"
 
 # A grammar of line roles: a marker opens a line, a group holds items and
 # nothing else, and a comment reaches past its line through a group.
