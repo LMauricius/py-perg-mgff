@@ -1,191 +1,386 @@
 # MGFF, described in MGFF.
 #
-# The `Lex` target is Part 1 of the specification: how a file splits into text,
-# escapes and groups. The `Parse` target is Part 2: what those pieces mean.
+# The file scope holds the shared vocabulary: the characters, the escapes and
+# the tokens, so both targets read the same definitions. `Lex` (Part 1) says how
+# a file splits into text, escapes and groups. `Parse` (Part 2) says what those
+# pieces mean: which lines carry definitions, where a marker is a marker, and
+# which groups may hold definitions of their own.
 #
 # Ordinary text carries no token of its own, on purpose. MGFF has no negated
 # character set, so "every character that is not a bracket" cannot be written
 # down; nor does it need to be, since text nobody claims is exactly what a
 # highlighter calls normal.
+#
+# A highlighting backend reads `Lex` as one flat list of tokens, so the two
+# roles a marker has cannot be told apart there: a lone `d`, `t` or `p` written
+# as an item still colours as a marker, and a `|` or `/` still colours as a
+# choice. Which line a marker really opens is what `Parse` says.
 
 d Language > name(MGFF) section(Sources) extensions(*.mgff)
-           > mimetype(text/x-mgff) license(MIT)
+           > mimetype(text/x-mgff) license(MIT) lineComment(\x23)
+           > description(MGFF grammar support, generated from MGFF.)
+           # An editor extension is installed under a publisher and a version,
+           # whether or not it was ever published.
+           > publisher(pyperg) version(0.1.0)
+           # Kate does not count these as word boundaries by default, and a
+           # marker is a whole word. Saying so keeps every backend in step.
+           > additionalDeliminator(\x27`")
+
+
+# -- the alphabet ----------------------------------------------------------
+
+d Hex = 0-9|a-f|A-F
+
+# What the escape naming a character by its Unicode name may hold.
+d UnicodeNameChar = A-Z|0-9|-|_
+
+# What a name is made of: letters, digits and `_`.
+d NameChar = Letter|Mark|Decimal_Number|Connector_Punctuation
+
+# Everything that may follow a `#` to the end of the line. Written as
+# categories because there is no way to say "anything but a newline", and a line
+# is all a highlighter ever sees at once anyway.
+d CommentChar = Letter|Mark|Number|Punctuation|Symbol|Separator|\t
+
+# What a part of a character set is spelled with. `Ps` and `Pe` — the open and
+# close punctuation, brackets among them — are left out, so a range can never
+# reach across a group.
+d PartChar = Letter|Mark|Number|Pc|Pd|Pi|Pf|Po|Sm|Sc|Sk|So
+
+# The set separator, named so it can be written as the first item of a group,
+# where a bare `|` would read as an alternative marker instead.
+d BarChar = |
+
+
+# -- escapes ---------------------------------------------------------------
+
+# The closed set of one-character escapes.
+d SimpleEscape = \\|_|a|b|f|n|r|t|v|0
+
+# An escape denotes exactly one character, and the set is closed: a backslash
+# followed by anything not listed here is an error.
+d Escape = \\ SimpleEscape
+         / \\ x Hex Hex
+         / \\ u Hex Hex Hex Hex
+         / \\ U Hex Hex Hex Hex Hex Hex Hex Hex
+         / \\ < ( UnicodeNameChar )+ >
+    > class(SpecialChar)
+
+# The two escapes whose character is ordinary text once written: `(` and `)`
+# have to be escaped only because they are the brackets. The pair is matched as
+# one token rather than as a special backslash and a normal parenthesis, since a
+# highlighter styles a whole match, and a bare bracket left behind would open a
+# group that was never opened.
+d LiteralEscape = \\ \(
+                / \\ \)
+    > class(SpecialChar)
+
+
+# -- character sets --------------------------------------------------------
+
+# One character of a set, however it is spelled.
+d SetChar = Escape
+          / LiteralEscape
+          / PartChar
+
+# A range, `E-F`, both endpoints a single character.
+d CharRange = SetChar - SetChar
+    > class(DataType Range)
+
+# The Unicode categories a set may name, in both spellings. A category is
+# written out character by character, since bare text such as `Lu` in a body is
+# already a set of its own rather than the two letters. Only these names are a
+# category; anything else of two or more characters is a call.
+d Category = C c
+           | C f
+           | C n
+           | C o
+           | C s
+           | L C
+           | L l
+           | L m
+           | L o
+           | L t
+           | L u
+           | M c
+           | M e
+           | M n
+           | N d
+           | N l
+           | N o
+           | P c
+           | P d
+           | P e
+           | P f
+           | P i
+           | P o
+           | P s
+           | S c
+           | S k
+           | S m
+           | S o
+           | Z l
+           | Z p
+           | Z s
+           | C a s e d _ L e t t e r
+           | C l o s e _ P u n c t u a t i o n
+           | C o n n e c t o r _ P u n c t u a t i o n
+           | C o n t r o l
+           | C u r r e n c y _ S y m b o l
+           | D a s h _ P u n c t u a t i o n
+           | D e c i m a l _ N u m b e r
+           | E n c l o s i n g _ M a r k
+           | F i n a l _ P u n c t u a t i o n
+           | F o r m a t
+           | I n i t i a l _ P u n c t u a t i o n
+           | L e t t e r
+           | L e t t e r _ N u m b e r
+           | L i n e _ S e p a r a t o r
+           | L o w e r c a s e _ L e t t e r
+           | M a r k
+           | M a t h _ S y m b o l
+           | M o d i f i e r _ L e t t e r
+           | M o d i f i e r _ S y m b o l
+           | N o n s p a c i n g _ M a r k
+           | N u m b e r
+           | O p e n _ P u n c t u a t i o n
+           | O t h e r
+           | O t h e r _ L e t t e r
+           | O t h e r _ N u m b e r
+           | O t h e r _ P u n c t u a t i o n
+           | O t h e r _ S y m b o l
+           | P a r a g r a p h _ S e p a r a t o r
+           | P r i v a t e _ U s e
+           | P u n c t u a t i o n
+           | S e p a r a t o r
+           | S p a c e _ S e p a r a t o r
+           | S p a c i n g _ M a r k
+           | S u r r o g a t e
+           | S y m b o l
+           | T i t l e c a s e _ L e t t e r
+           | U n a s s i g n e d
+           | U p p e r c a s e _ L e t t e r
+    > class(DataType Category)
+
+# One part of a set: a range, a category, or a single character. An escape is a
+# character too, which is what makes `\_|\t` one set rather than a set with an
+# escape hanging off it.
+d CharPart = CharRange
+           / Category
+           / SetChar
+
+# A set of two or more parts. A set of one part is a range or a category on its
+# own; a lone character is left to be read as the call it may also be.
+d CharSet = CharPart ( BarChar CharPart )+
+    > class(DataType Set)
+
+
+# -- the markers -----------------------------------------------------------
+
+# `d` a macro definition, `t` a generation target, `p` a name prefix. A marker
+# has its role only as the first item of a line.
+d DefMarker = d
+    > class(Keyword)
+d TargetMarker = t
+    > class(Keyword)
+d PrefixMarker = p
+    > class(Keyword)
+
+# The three as one token. A keyword list matches between word boundaries, so
+# the `d` of `Digit` is not one of these.
+d LineMarker = d
+             | t
+             | p
+    > class(Keyword)
+
+# `|` a length-based alternative, `/` an order-based one. The same two
+# characters spell an inline choice, `(a)|(b)`, and separate the parts of a
+# character set — which is matched as a set before the separator is reached.
+d ChoiceMarker = |
+               / /
+    > class(ControlFlow)
+
+# The two spellings on their own, so a line opening with one can be told from a
+# line opening with the other.
+d BarMarker = |
+    > class(ControlFlow)
+d SlashMarker = /
+    > class(ControlFlow)
+
+# The first top-level `=` separates a head from its body; `>` opens attributes.
+d EqualsMarker = =
+    > class(Operator)
+d AttrMarker = >
+    > class(Operator)
+
+# A comment is a line whose first item is `#`.
+d CommentMarker = #
+    > class(Comment)
+
+
+# -- the rest of a line ----------------------------------------------------
+
+d Space = ( \_|\t )+
+    > class(Normal)
+
+d Comment = CommentMarker ( CommentChar )*
+    > class(Comment)
+
+# `(` and `)` are the only brackets. Every other character is text.
+d LParen = \(
+    > class(Normal)
+d RParen = \)
+    > class(Normal)
+
+# The text of a call: a macro's name, and the text a mixfix name is built from.
+d Name = ( NameChar )+
+    > class(Normal)
+
 
 t Lex (
 
-    # -- the alphabet ------------------------------------------------------
-
-    d Hex      = 0-9
-			| a-f
-			| A-F
-    d UnicodeNameChar = A-Z
-			| 0-9
-			| -
-			| _
-
-    # Everything that may follow a `#` to the end of the line. Written as
-    # categories because there is no way to say "anything but a newline", and
-    # a line is all a highlighter ever sees at once anyway.
-    d AnyChar = Letter
-			| Mark
-			| Number
-			| Punctuation
-			| Symbol
-			| Separator
-			| \t
-
-    # -- Part 1: the shape of a file ---------------------------------------
-
-    d Space = ( \_
-			| \t )+
-        > class(Normal)
-
-    # A comment is a line whose first item is `#`.
-    d Comment = # ( AnyChar )*
-        > class(Comment)
-
-    # The closed set of one-character escapes.
-    d SimpleEscape = \\
-			| _
-			| a
-			| b
-			| f
-			| n
-			| r
-			| t
-			| v
-
-    # The characters that need to be escaped to not be treated as a special symbol
-    d LiteralEscape = \(
-			| \)
-        > class(Normal)
-
-    # An escape denotes exactly one character, and the set is closed: a
-    # backslash followed by anything not listed here is an error.
-    d Escape = \\ LiteralEscape
-             / \\ SimpleEscape
-             / \\ 0
-             / \\ x Hex Hex
-             / \\ u Hex Hex Hex Hex
-             / \\ U Hex Hex Hex Hex Hex Hex Hex Hex
-             / \\ < ( UnicodeNameChar )+ >
-        > class(SpecialChar)
-
-    # `(` and `)` are the only brackets. Every other character is text.
-    d LParen = \(
-        > class(Normal)
-
-    d RParen = \)
-        > class(Normal)
-
-    # -- Part 2: the markers that give a line its role ---------------------
-
-    # `d` a macro definition, `t` a generation target, `p` a name prefix.
-    # A keyword list matches between word boundaries, so the `d` of `Digit`
-    # is not one of these.
-    d LineMarker = d
-
-			|  t
-
-			|  p
-        > class(Keyword)
-
-    # `
-			| ` a length-based alternative, `/` an order-based one, `>` attributes.
-    # None of the three needs an escape: a marker has its role only as the
-    # first item of a line, and here they are the body of one.
-    d ChoiceMarker =
-			|
-                   / /
-                   / >
-        > class(ControlFlow)
-
-    # The first top-level `=` separates a head from its body.
-    d Equals = =
-        > class(Operator)
-
-    # The starting production: the tokens, in the order they should be tried.
+    # The tokens, in the order they should be tried. The order is the whole of
+    # what this target says: a comment before anything it may contain, a
+    # character set before the escapes and separators that are parts of it, an
+    # escape before the bracket it may spell, and a marker before the name it
+    # would otherwise start.
     d Token = Space
             / Comment
+            / CharSet
+            / CharRange
+            / LiteralEscape
             / Escape
+            / Category
             / LineMarker
             / ChoiceMarker
-            / Equals
+            / EqualsMarker
+            / AttrMarker
             / LParen
             / RParen
-    d File = Token*
+            / Name
+    d File = (Token)*
 )
 
+
 t Parse (
-    AnyItem = d
-			| p
-			| t
-			| |
-			| /
-			| >
-			| NameLike
-			| CallLike
-			| #
 
-    DefItem  = Call
-             / DefGroup
-             / Name
-             / AnyItem
-             > class(Normal)
+    # -- layout ------------------------------------------------------------
 
-    Attribute = AnyItem
-              > class(Attribute)
+    d WS = ( \_|\t )+
+    d Gap = ( WS )?
+    d NL = \n
 
-    dMarker = d
-            > class(Keyword)
-    pMarker = p
-            > class(Keyword)
-    tMarker = t
-            > class(Keyword)
-    =Marker = =
-            > class(Operator)
-    >Marker = >
-            > class(Operator)
-    ChoiceMarker = |
-                 | /
-                 > class(Operator)
+    # -- items -------------------------------------------------------------
 
-    d Definition = dMarker AnyItem =Marker DefLine \n (ChoiceMarker DefLine \n)* (AttributeLine \n)*
+    # A literal character. MGFF has no negated set, so this is as close as the
+    # exclusion of a bracket, a space and a backslash can be written; the shapes
+    # above it are tried first, which is what keeps a backslash out of it.
+    d TextChar = PartChar
 
-    AttributeLine = >Marker (Attribute)*
+    # What the text of an item is made of, most particular shape first: a
+    # character set is a set even where a name would do, and a lone character is
+    # a name where one resolves.
+    d Piece = CharSet
+            / CharRange
+            / Category
+            / Escape
+            / LiteralEscape
+            / Name
+            / TextChar
 
-    d ScopeGroup = \( ScopeLines \)
-    d DefGroup = \( DefLines \)
-    d FlatGroup = \( FlatLines \)
+    d Text = ( Piece )+
 
-    d ScopeLines = ( ScopeLine \n )* (ScopeLine)?
-    d ScopeLine = Definition
-                / Scope
-                / Target
-                /
+    # Text that is a name and nothing else. A head names the macro it defines
+    # and an attribute names what it sets, so neither is ever a character set:
+    # `section(Sources)` names a section, not the symbols.
+    d PlainPiece = Escape
+                 / LiteralEscape
+                 / Name
+                 / TextChar
+    d PlainText = ( PlainPiece )+
 
-    d DefLines = ( DefLine \n )* (DefLine)?
-    d DefLine = (DefItem)*
+    # A group, whatever its lines hold. Written with a parameter, so it is
+    # expanded where it is called and no group of its own comes out of it.
+    d Slot(Lines) = \( Lines \)
 
-    d FlatLines = ( FlatLine \n )* (FlatLine)?
-    d FlatLine = (AnyItem)*
+    # Within an item, text and groups alternate, so two groups always have text
+    # between them; two written side by side are an error. What counts as text
+    # and what a group holds are both the caller's to say, since an attribute is
+    # written out of different pieces than a rule body is.
+    d Item(T)in(G) = T ( G T )* ( G )?
+                   / G ( T G )* ( T )?
 
+    # The items of one line, separated by whitespace outside every group.
+    d Items(T)in(G) = Gap ( Item(T)in(G) Gap )*
 
+    # -- comments ----------------------------------------------------------
 
+    # A comment is a line whose first item is `#`, and the rest of it is
+    # ordinary items. A group among them carries lines of its own, so a comment
+    # ends at the first newline that is not inside a group.
+    d CommentLine = CommentMarker Items(PlainText)in(CommentGroup) NL
+        > class(Comment)
+    d CommentGroup = Slot(CommentLines)
+        > class(Comment)
+    d CommentLines = Items(PlainText)in(CommentGroup) ( NL Items(PlainText)in(CommentGroup) )*
 
+    # -- definitions -------------------------------------------------------
 
+    # `d Head = Body`, and the alternative and attribute lines that carry it on.
+    # They belong to the definition rather than to the scope, which is what
+    # makes `|` an alternative here and ordinary text anywhere else.
+    d Definition = DefMarker WS Head Gap DefBody DefTail
+    d DefTail = ( (Gap AltLine)/(Gap CommentLine) )* ( (Gap AttrLine)/(Gap CommentLine) )*
 
-    # A group is the only thing in MGFF that nests, and so the only structure
-    # a context stack can follow: `(` pushes, `)` pops, and the pair folds.
-    d Group = \( Lines \)
+    # The head is a call-shape: its text gives the macro's name, and each of its
+    # groups declares one parameter.
+    d Head = Item(PlainText)in(Slot(Gap Name Gap))
 
-    # Within an item, text and groups alternate.
-    d Item = Group
-           / Escape
+    # A definition separated by `>` instead of `=` is a named list of
+    # attributes: it has no body, and no alternative may follow it.
+    # `= Body` runs to the line break; `> Attributes` is an attribute line like
+    # any other, which is what keeps its items coloured as attributes.
+    d DefBody = EqualsMarker BodyItems NL
+              / AttrLine
 
-    # A line's role is fixed by its first item.
-    d Line = ( LineMarker )? ( Item )*
-    d Lines = (Line)*
+    # A `#` line between alternatives does not end the macro.
+    d AltLine = BarMarker BodyItems NL
+              / SlashMarker BodyItems NL
 
-    d File = Lines
+    d AttrLine = AttrMarker AttrItems NL
+        > class(Attribute)
+
+    d BodyItems = Items(Text)in(SubGroup)
+
+    # The arguments of an attribute are attributes too, so they keep the class
+    # rather than falling back to the body's.
+    d AttrItems = Items(PlainText)in(AttrGroup)
+    d AttrGroup = Slot(AttrLines)
+        > class(Attribute)
+    d AttrLines = AttrItems ( NL AttrItems )*
+
+    # A subgroup is the group written inside a body: its lines are items and
+    # nothing else, since a subgroup holds no macro definitions.
+    d SubGroup = Slot(BodyLines)
+    d BodyLines = BodyItems ( NL BodyItems )*
+
+    # -- scopes ------------------------------------------------------------
+
+    # `t Name ( … )` and `p Prefix ( … )`. These groups, and the file itself,
+    # are the only places a definition may appear.
+    d TargetLine = TargetMarker WS Name Gap ScopeGroup Gap NL
+    d PrefixLine = PrefixMarker WS Name Gap ScopeGroup Gap NL
+
+    d ScopeGroup = Slot(ScopeLines)
+    d ScopeLines = ( ScopeLine )*
+
+    # A line's role is fixed by its first item; a line with no items is blank.
+    # Every role reads its own line break, so a scope is a run of whole lines.
+    d ScopeLine = Gap Definition
+                / Gap CommentLine
+                / Gap TargetLine
+                / Gap PrefixLine
+                / Gap NL
+
+    d File = ScopeLines
 )
