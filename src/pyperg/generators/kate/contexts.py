@@ -1,40 +1,44 @@
-"""Building Kate's contexts from the `Lex` and `Parse` targets.
+"""Spelling the highlighting machine as Kate's contexts.
 
 Kate highlights with a stack of **contexts**. A context is an ordered list of
 rules; at every position the first rule that matches wins, and a rule may push
-another context, pop back, or stay. That is a pushdown machine over text, so it
-reads nesting but it does not parse: there is no backtracking, and a rule cannot
-recurse.
+another context, pop back, or stay. `utils.machine` derives that machine from a
+grammar's `Parse` target, and this module writes it down:
 
-Both targets start at a macro named `File`.
+    Machine                Kate
+    ----------------------------------------------------
+    Context                <context>
+    Context.classes        attribute=, the style its text takes
+    Context.line_end       lineEndContext=
+    ContextRule.push       context="Name"
+    ContextRule.pop n      context="#pop" repeated n times
+    ContextRule.region     beginRegion / endRegion, which is what folds
+    Match.look_ahead       lookAhead="1"
+    Match.word_boundary    WordDetect, which matches between deliminators
 
-**`Lex`** maps exactly. `File` lists the token productions, in the order Kate
-should try them, and each becomes one or more rules in the `Tokens` context.
-Only the productions `File` names become rules; the rest are helpers, inlined
-into the expressions that use them, so nothing is tried that the grammar did not
-ask for.
+**A context holds what its place in the grammar reaches, and nothing else**, so
+`d` is a keyword where a line may open with one and ordinary text inside a
+subgroup, and a comment stays a comment across the lines its group spans.
 
-**`Parse`** maps approximately, and the shape of the approximation is this: what
-Kate can genuinely reproduce from a grammar is *nesting*, so a production that
-brackets something — an alternative opening and closing with a fixed character —
-becomes a context of its own, pushed by the opening character and popped by the
-closing one, and marked as a foldable region. Everything else contributes its
-terminals. The result highlights and folds correctly; it does not reject input
-the grammar would reject.
+**`Lex` keeps two jobs**: the expression each token matches with, and the order
+tokens are tried in where a context holds several. A grammar with no `Parse`
+target is a machine of a single context, and is built straight from that order —
+which is what `Tokens` is.
 
-    File     the initial context; nothing but an entry point
-    Grammar  what may appear anywhere: nesting, then tokens, then loose terminals
-    Tokens   the `Lex` rules
-    <P>      one per bracketing `Parse` production
+A production reached as a plain call is spelled from the whole production rather
+than from one expression, so a choice of fixed words still becomes a hashed
+`<list>` and still matches only between word boundaries.
 
 ```mermaid
 stateDiagram-v2
     [*] --> File
-    File --> Grammar: include
-    Grammar --> Tokens: include
-    Grammar --> Factor: ( pushes
-    Factor --> Grammar: include
-    Factor --> [*]: ) pops
+    File --> Definition: <code>d</code> pushes
+    Definition --> DefinitionLine: line end
+    DefinitionLine --> AltLine: <code>|</code> pushes
+    DefinitionLine --> [*]: any other line pops the chain
+    File --> CommentLine: <code>#</code> pushes
+    CommentLine --> CommentGroup: <code>(</code> pushes
+    CommentLine --> [*]: line end
 ```
 """
 
@@ -43,23 +47,21 @@ from __future__ import annotations
 import sys
 
 from ...diagnostics.errors import GeneratorError
+from ...mgff.common.rules import Reference
 from ...mgff.semantics.model import GrammarModel, Production, Target
 from ..utils.classes import classes_of
-from ..utils.highlight import (
-    START_PRODUCTION,
-    brackets_of,
-    reachable_productions,
-    token_order,
-)
-from ..utils.walk import flatten, fuse_literals, single_character
+from ..utils.highlight import token_order
+from ..utils.machine import POP
+from ..utils.machine import Context as MachineContext
+from ..utils.machine import ContextRule as MachineRule
+from ..utils.machine import MachineBuilder
+from ..utils.walk import literal_of
 from ..utils.xmlwrite import Element
 from .rules import RuleBuilder, RuleContext
 from .styles import FALLBACK_STYLE, style_for
 
-#: The names of the contexts this backend always builds. The initial one is
-#: named after the macro a target starts at, since that is what it stands for.
-FILE_CONTEXT = START_PRODUCTION
-GRAMMAR_CONTEXT = "Grammar"
+#: The one context a grammar of tokens alone amounts to. A grammar with a
+#: `Parse` target names its contexts after the productions they came from.
 TOKENS_CONTEXT = "Tokens"
 
 #: The targets the backend understands.
@@ -78,7 +80,11 @@ class ItemDatas:
 
     def attribute_for(self, production: Production) -> str:
         """Register a production's style and return the itemData's name."""
-        name, default_style = style_for(classes_of(production))
+        return self.for_classes(classes_of(production))
+
+    def for_classes(self, classes: list[str]) -> str:
+        """Register a set of classes and return the itemData's name."""
+        name, default_style = style_for(classes or [FALLBACK_STYLE])
         self.styles.setdefault(name, default_style)
         return name
 
@@ -91,22 +97,6 @@ class ItemDatas:
 
 
 # -- reading the targets ---------------------------------------------------
-
-
-def loose_terminals(productions: list[Production]) -> list[str]:
-    """The fixed single characters a target's rules mention, deduplicated.
-
-    These are the operators and separators a `Parse` grammar writes inline. They
-    go last, so a token of the same shape is matched as that token first.
-    """
-    found: list[str] = []
-    for production in productions:
-        for alternative in production.alternatives:
-            for part in fuse_literals(flatten(alternative)):
-                char = single_character(part)
-                if char is not None and char not in found and not char.isspace():
-                    found.append(char)
-    return found
 
 
 # -- building --------------------------------------------------------------
@@ -122,8 +112,11 @@ class ContextBuilder:
         self.item_datas = ItemDatas()
         self.contexts: list[Element] = []
         self.lex_rules = RuleBuilder(self.lex.productions if self.lex else {})
-        self.parse_rules = RuleBuilder(self.parse.productions if self.parse else {})
-        self._bracketing: list[tuple[Production, tuple[str, str]]] | None = None
+        #: The rules of the machine's contexts, which reach across both targets.
+        self.machine_rules = RuleBuilder(
+            {**(self.lex.productions if self.lex else {}),
+             **(self.parse.productions if self.parse else {})}
+        )
         if self.lex is None and self.parse is None:
             raise GeneratorError(
                 "the grammar has no `Lex` or `Parse` target; the Kate backend "
@@ -146,18 +139,84 @@ class ContextBuilder:
     def build(self) -> None:
         """Build every context, in the order Kate should read them.
 
-        The first context listed is the one a document starts in.
+        The first context listed is the one a document starts in. A grammar with
+        a `Parse` target is spelled from the machine `utils.machine` derives, so
+        every context holds what its place in the grammar reaches and nothing
+        else. One with only tokens is a machine of a single context, and is
+        built straight from the `Lex` order.
         """
         if self.parse is not None:
-            self.build_file_context()
-            self.build_grammar_context()
-            self.build_bracket_contexts()
-        if self.lex is not None:
+            self.build_machine()
+        elif self.lex is not None:
             self.build_tokens_context(self.lex)
+
+    # -- the machine -------------------------------------------------------
+
+    def build_machine(self) -> None:
+        """Spell every context of the machine derived from `Parse`."""
+        assert self.parse is not None
+        order = token_order(self.lex) if self.lex is not None else []
+        machine = MachineBuilder(self.parse, order).build()
+        # The context a document starts in comes first, which is how Kate reads
+        # a definition: the first context listed is the initial one.
+        for name in [machine.start, *machine.contexts]:
+            context = machine.contexts.get(name)
+            if context is not None and not any(
+                element.attributes.get("name") == name for element in self.contexts
+            ):
+                self.build_context(context)
+
+    def build_context(self, context: MachineContext) -> None:
+        """One context of the machine, with its rules in the order they are tried."""
+        element = self.context(
+            context.name,
+            attribute=self.item_datas.for_classes(context.classes),
+            lineEndContext=context.line_end,
+        )
+        for rule in context.rules:
+            element.children.extend(self.build_rule(rule))
+
+    def build_rule(self, rule: MachineRule) -> list[Element]:
+        """One rule of the machine as the Kate rules that spell it.
+
+        `#pop` repeated is how Kate spells leaving several contexts at once,
+        which is what a chained line context does when its line is not one of
+        its own.
+
+        A rule that is nothing but a call is spelled from the whole production,
+        so a choice of fixed words still becomes a `<list>` and still matches
+        only between word boundaries — the `Lu` of `Lucky` is not a category.
+        Anything else is one expression.
+        """
+        where = RuleContext(
+            attribute=self.item_datas.for_classes(rule.classes),
+            context=rule.push or (POP * rule.pop if rule.pop else None),
+            begin_region=rule.region if rule.push else None,
+            end_region=rule.region if rule.pop and not rule.push else None,
+            look_ahead=rule.match.look_ahead,
+        )
+        if rule.match.word_boundary:
+            # `WordDetect` matches only between deliminators, which is what
+            # keeps the `d` of `Digit` from opening a definition.
+            literal = literal_of(rule.match.rule)
+            if literal:
+                return [where.applied_to("WordDetect", String=literal)]
+        called = self.called_production(rule)
+        if called is not None:
+            return self.machine_rules.rules_for(called, where)
+        return [self.machine_rules.rule_for(rule.match.rule, where)]
+
+    def called_production(self, rule: MachineRule) -> Production | None:
+        """The production a plain match rule calls, when that is all it does."""
+        if rule.push or rule.pop or rule.match.look_ahead:
+            return None
+        if isinstance(rule.match.rule, Reference):
+            return self.machine_rules.lookup(rule.match.rule.name)
+        return None
 
     def elements(self) -> tuple[list[Element], list[Element], list[Element]]:
         """The contexts, the item data and the keyword lists."""
-        lists = self.lex_rules.list_elements() + self.parse_rules.list_elements()
+        lists = self.lex_rules.list_elements() + self.machine_rules.list_elements()
         return self.contexts, self.item_datas.elements(), lists
 
     def context(self, name: str, **attributes: str | None) -> Element:
@@ -186,71 +245,3 @@ class ContextBuilder:
 
     # -- Parse -------------------------------------------------------------
 
-    def parse_productions(self) -> list[Production]:
-        """The `Parse` productions reachable from its `File`, `File` aside.
-
-        A production of the `Lex` target reached from here is left out: its
-        tokens are already matched by the `Tokens` context. Empty when the
-        grammar has no `Parse` target at all.
-        """
-        if self.parse is None:
-            return []
-        return reachable_productions(self.parse)
-
-    def build_file_context(self) -> None:
-        """The initial context: an entry point onto everything else."""
-        element = self.context(FILE_CONTEXT)
-        element.child("IncludeRules", context=GRAMMAR_CONTEXT)
-
-    def build_grammar_context(self) -> None:
-        """What may appear anywhere: nesting first, then tokens, then terminals.
-
-        The order is what makes the approximation behave: a bracket opens its
-        own context before a token rule of the same shape can swallow it, and a
-        loose terminal is only reached when nothing better matched.
-        """
-        element = self.context(GRAMMAR_CONTEXT)
-        bracketing = self.bracketing_productions()
-
-        for production, (opening, _) in bracketing:
-            where = RuleContext(
-                attribute=self.item_datas.attribute_for(production),
-                context=production.name,
-                begin_region=production.name,
-            )
-            element.children.append(where.applied_to("DetectChar", char=opening))
-
-        if self.lex is not None:
-            element.child("IncludeRules", context=TOKENS_CONTEXT)
-
-        bracket_characters = {char for _, pair in bracketing for char in pair}
-        plain = RuleContext(attribute=FALLBACK_STYLE)
-        for char in loose_terminals(self.parse_productions()):
-            if char not in bracket_characters:
-                element.children.append(plain.applied_to("DetectChar", char=char))
-
-    def build_bracket_contexts(self) -> None:
-        """One context per bracketing production, popped by its closing character."""
-        for production, (_, closing) in self.bracketing_productions():
-            element = self.context(production.name)
-            where = RuleContext(
-                attribute=self.item_datas.attribute_for(production),
-                context="#pop",
-                end_region=production.name,
-            )
-            element.children.append(where.applied_to("DetectChar", char=closing))
-            element.child("IncludeRules", context=GRAMMAR_CONTEXT)
-
-    def bracketing_productions(self) -> list[tuple[Production, tuple[str, str]]]:
-        """Every `Parse` production that wraps something in a fixed pair.
-
-        Computed once and cached: the grammar context and the bracket contexts
-        must agree on which productions these are.
-        """
-        if self._bracketing is None:
-            self._bracketing = [
-                (production, pair)
-                for production in self.parse_productions()
-                if (pair := brackets_of(production)) is not None
-            ]
-        return self._bracketing

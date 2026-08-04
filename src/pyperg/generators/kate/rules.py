@@ -121,8 +121,10 @@ class RuleBuilder:
         words = [literal_of(alternative) for alternative in alternatives]
         if not all(word is not None and is_word(word) for word in words):
             return None
-        list_name = self.list_names.allocate(safe_identifier(name).lower())
-        self.lists[list_name] = [word for word in words if word is not None]
+        # Keyed by the production, so a list reached from several contexts is
+        # written once and named the same everywhere.
+        list_name = self.list_names.allocate(safe_identifier(name).lower(), key=name)
+        self.lists.setdefault(list_name, [word for word in words if word is not None])
         return where.applied_to("keyword", String=list_name)
 
     # -- single rules ------------------------------------------------------

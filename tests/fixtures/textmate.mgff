@@ -55,10 +55,18 @@ t Lex (
 
 t Parse (
 
+    # A highlighter colours every character, so `Parse` names every token it
+    # wants coloured — the ones a parser would skip among them. A context holds
+    # what its place in the grammar reaches and nothing else.
+    d Skipped = Space
+              / Comment
+
     # The bracketed alternative is what a highlighter can reproduce: it nests,
     # and VS Code folds and auto-closes it.
     d Atom = Number
            / Ident
+           / Keyword
+           / Skipped
            / \( Expr \)
 
     d Expr = Atom Op Expr

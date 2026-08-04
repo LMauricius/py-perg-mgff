@@ -42,40 +42,30 @@ TextMate runs a stack of **patterns** over the text, one line at a time. A
 `match` pattern consumes what it matched. A `begin`/`end` pattern pushes, matches
 its own nested patterns until the `end` expression fires, and pops.
 
-```mermaid
-stateDiagram-v2
-    direction LR
-    [*] --> grammar
-    grammar --> tokens: include
-    grammar --> atom: <code>(</code> begins
-    atom --> grammar: include
-    atom --> [*]: <code>)</code> ends
-```
-
 That is a pushdown machine over text — the same machine Kate's contexts are — so
-the two highlighting backends read a grammar identically and differ only in how
-they spell the answer:
+both backends derive the machine once, from `Parse`, and differ only in how they
+spell it:
 
-| Kate | TextMate |
-| --- | --- |
-| a context | a repository entry |
-| a rule pushing a context | `begin` / `end`, with nested `patterns` |
-| `#pop` | the `end` expression |
-| `IncludeRules` | `{"include": "#name"}` |
-| an itemData and its default style | a scope name |
-| a `<list>` of keywords | `\b(?:a\|b\|c)\b` |
-| `DetectChar`, `WordDetect`, `AnyChar`, … | all just `match`, since TextMate has one way to match |
+| Machine | Kate | TextMate |
+| --- | --- | --- |
+| a context | a `<context>` | a repository entry |
+| what a context colours | its `attribute` | `contentName` |
+| a rule pushing a context | `context="X"` | `begin`, with nested `patterns` |
+| a rule popping one | `#pop` | the `end` expression |
+| a context ending at the line's end | `lineEndContext="#pop"` | `end: "$"` |
+| a context carrying on to the next line | `lineEndContext="Name"` | an `end` that fires on the first line not carrying it on |
+| a fixed pair that folds | `beginRegion`/`endRegion` | the pair in `language-configuration.json` |
+| a marker that is a word | `WordDetect` | `\b…\b` |
+| a `<list>` of keywords | `<list>` | `\b(?:a\|b\|c)\b` |
 
 And so the same two conclusions hold:
 
 - **`Lex` maps exactly.** A token is a regular pattern, and a regular pattern is
   precisely what a `match` matches.
-- **`Parse` maps approximately.** The part of a grammar a pushdown machine can
-  genuinely reproduce is its *nesting*, so that is the part the backend uses.
-  The output highlights and folds what your grammar describes; it does not
-  reject what your grammar would reject.
-
----
+- **`Parse` maps closely.** Every entry holds what its place in the grammar
+  reaches, so a marker is a keyword only where a line may open with one. What
+  neither backend can do is reject: the output highlights and folds what your
+  grammar describes, and colours malformed input all the same.
 
 ## The `Lex` target
 
@@ -94,8 +84,9 @@ t Lex (
 Mind the spelling of the choice: it carries no whitespace around its separator,
 since a space there would split it into separate items.
 
-**Each token becomes a repository entry of its own**, and `tokens` includes them
-in order:
+**Each token becomes a repository entry of its own**, included wherever it may
+appear — `tokens` for a grammar of tokens alone, and every context that reaches
+it once there is a `Parse` target:
 
 ```json
 "tokens": {
@@ -121,62 +112,65 @@ expression and an expression cannot recurse. Nesting belongs to `Parse`.
 
 ## The `Parse` target
 
-From `File` the backend looks for **bracketing productions** — a production with
-an alternative that opens and closes with a fixed character:
+`File` is the starting production, and from it the backend derives the machine:
+a set of contexts, where a context is *a place a line may begin* and holds the
+rules its place in the grammar reaches — and nothing else.
+
+A production becomes a **span** when it opens with a fixed character and either
+closes with one or runs to a line break; a **token** when it carries a `class`
+and has a regular form; and is **transparent** otherwise, its parts belonging to
+whoever reached it.
 
 ```mgff
 t Parse (
-    d Atom = Number
-           / Ident
-           / \( Expr \)
-
-    d Expr = Atom Op Expr
-           / Atom
-
-    d File = ( Expr )*
+    d Definition = DefMarker WS Head Gap EqualsMarker Items NL
+    d Comment    = CommentMarker Items NL
+                 > class(Comment)
+    d Group      = \\( Items \\)
+    d Line       = (Definition)/(Comment)
+    d File       = ( (Line)/(NL) )*
 )
 ```
 
-`Atom` brackets with `(` and `)`, so it becomes a span of its own:
+A span becomes a `begin`/`end` entry. Where it ends is the interesting part, and
+there are three answers:
 
 ```json
-"atom": {
-  "name": "meta.atom.toy",
-  "begin": "\\(",
-  "beginCaptures": { "0": { "name": "punctuation.section.atom.begin.toy" } },
-  "end": "\\)",
-  "endCaptures": { "0": { "name": "punctuation.section.atom.end.toy" } },
-  "patterns": [{ "include": "#grammar" }]
-}
+"group":   { "begin": "\\(", "end": "\\)" },
+"comment": { "begin": "#",  "end": "$", "contentName": "comment.toy" },
+"definition": { "begin": "\\bd\\b", "end": "^(?!\\s*(?:\\||/|>|#)|\\s*$)" }
 ```
 
-Including `grammar` back into the span is what makes the nesting recursive, and
-is the one thing a `match` pattern could not have done. `Expr` brackets nothing,
-so it contributes nothing.
+- a **closing character**, which is also the pair VS Code folds and auto-closes;
+- the **end of the line**, for a role that covers one line;
+- the **first line that does not carry the role on**, for one that reaches
+  further — a definition and its `|`, `/` and `>` lines.
 
-The repository a grammar with both targets produces:
+The last is a zero-width `end` anchored at a line's start, not a `while`. A
+`while` is tested at the start of every line whatever is open at the time, and
+would cut a group that spans lines in half; an `end` waits until the spans inside
+have closed, which is what the machine describes and what Kate does.
 
-| Entry | What it holds |
-| --- | --- |
-| `grammar` | What may appear anywhere: the bracketing spans, then the tokens. |
-| `tokens` | The `Lex` patterns, in order. |
-| `<name>` | One per token, and one per bracketing production. |
+**`contentName` is how a comment colours its body.** The scope on the entry
+itself (`meta.<name>`) says what the region *is*; `contentName` colours what it
+holds, so a group nested inside a comment is still comment-coloured.
 
-The bracket spans come before the tokens, so `(` opens its span rather than
-being eaten by an `LParen` token of the same shape.
+**Every token is an entry of its own**, included wherever it is reachable rather
+than written out again in each entry that can reach it. Where the same macro is
+reached with different classes — a name is a name in a body and an attribute on
+an attribute line — each gets an entry and a scope of its own.
 
-A grammar with only a `Lex` target starts at `tokens` and stops there. A target
-that is neither `Lex` nor `Parse` is skipped, with a note on standard error.
+Since a context holds only what it reaches, **`Parse` names every token it wants
+coloured**, the ones a parser would skip among them:
 
-### One thing Kate must do and this backend does not
+```mgff
+d Skipped = Space
+          / Comment
+```
 
-Kate colours every character of a document, so a `Parse` grammar's loose
-terminals — the operators and separators it writes inline — have to be matched
-by *something*. TextMate leaves unmatched text at the editor's default colour,
-which is exactly what those terminals would have been given anyway, so they are
-left out and the output is that much smaller.
-
----
+A grammar with only a `Lex` target is a machine of one context: `tokens`, built
+straight from the order `File` names. A target that is neither `Lex` nor `Parse`
+is skipped, with a note on standard error.
 
 ## Scope names
 
@@ -345,37 +339,101 @@ plus the settings only an editor extension needs. Generating from it gives:
 {
   "name": "Toy",
   "scopeName": "source.toy",
-  "fileTypes": ["toy"],
-  "patterns": [{ "include": "#grammar" }],
+  "fileTypes": [
+    "toy"
+  ],
+  "patterns": [
+    {
+      "include": "#grammar"
+    }
+  ],
   "repository": {
     "grammar": {
-      "patterns": [{ "include": "#atom" }, { "include": "#tokens" }]
+      "patterns": [
+        {
+          "include": "#atom"
+        },
+        {
+          "include": "#comment"
+        },
+        {
+          "include": "#keyword"
+        },
+        {
+          "include": "#number"
+        },
+        {
+          "include": "#ident"
+        },
+        {
+          "include": "#space"
+        },
+        {
+          "include": "#op"
+        }
+      ]
     },
     "atom": {
       "name": "meta.atom.toy",
       "begin": "\\(",
-      "beginCaptures": { "0": { "name": "punctuation.section.atom.begin.toy" } },
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.section.atom.begin.toy"
+        }
+      },
       "end": "\\)",
-      "endCaptures": { "0": { "name": "punctuation.section.atom.end.toy" } },
-      "patterns": [{ "include": "#grammar" }]
-    },
-    "tokens": {
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.section.atom.end.toy"
+        }
+      },
       "patterns": [
-        { "include": "#space" }, { "include": "#comment" },
-        { "include": "#keyword" }, { "include": "#number" },
-        { "include": "#ident" }, { "include": "#op" },
-        { "include": "#lparen" }, { "include": "#rparen" }
+        {
+          "include": "#atom"
+        },
+        {
+          "include": "#comment"
+        },
+        {
+          "include": "#keyword"
+        },
+        {
+          "include": "#number"
+        },
+        {
+          "include": "#ident"
+        },
+        {
+          "include": "#space"
+        },
+        {
+          "include": "#op"
+        }
       ]
     },
-    "space":   { "match": "[ \\t]+" },
-    "comment": { "name": "comment.toy", "match": "#[\\p{L}\\p{Nd} \\t]*" },
-    "keyword": { "name": "keyword.toy", "match": "\\b(?:while|else|let|if)\\b" },
-    "number":  { "name": "constant.numeric.float.literal.toy",
-                 "match": "[0-9]+(?:\\.[0-9]+)?" },
-    "ident":   { "name": "variable.other.toy", "match": "[\\p{L}_][\\p{L}\\p{Nd}_]*" },
-    "op":      { "name": "keyword.operator.toy", "match": "(?:<=|>=|==|\\+|-|\\*|=)" },
-    "lparen":  { "match": "\\(" },
-    "rparen":  { "match": "\\)" }
+    "comment": {
+      "name": "comment.toy",
+      "match": "#[\\p{L}\\p{Nd} \\t]*"
+    },
+    "keyword": {
+      "name": "keyword.toy",
+      "match": "\\b(?:while|else|let|if)\\b"
+    },
+    "number": {
+      "name": "constant.numeric.float.literal.toy",
+      "match": "[0-9]+(?:\\.[0-9]+)?"
+    },
+    "ident": {
+      "name": "variable.other.toy",
+      "match": "[\\p{L}_][\\p{L}\\p{Nd}_]*"
+    },
+    "space": {
+      "match": "[ \\t]+"
+    },
+    "op": {
+      "name": "keyword.operator.toy",
+      "match": "(?:<=|>=|==|\\+|-|\\*|=)"
+    }
   }
 }
 ```
@@ -391,15 +449,22 @@ float, `autoclass` found `Comment` by name and `Variable` through `Ident`,
 
 ## Limitations
 
-- **`Parse` output is an approximation.** It highlights and folds; it does not
-  validate. A grammar that accepts only well-formed input will still colour
+- **`Parse` output does not validate.** It highlights and folds what your
+  grammar describes; a grammar that accepts only well-formed input still colours
   malformed input.
+- **A context holds what it reaches.** A token `Parse` never names is never
+  matched, which is why a grammar written for a highlighter names the tokens a
+  parser would skip.
+- **A line role ends where the next line says.** A definition ends at the first
+  line beginning with none of its continuation markers; whether that line
+  *should* have followed is not something a highlighter can see.
 - **No recursive tokens.** A `Lex` production that reaches itself is rejected,
   because a `match` is an expression. Nesting has to be written as a bracketing
   `Parse` production.
-- **One line at a time.** A pattern is matched within a line, so a token cannot
-  span one. A construct that does has to be written as a bracketing production,
-  which is what `begin`/`end` is for.
+- **One line at a time.** A `match` pattern is matched within a line, so a token
+  cannot span one. A construct that does has to be written as a span — a
+  production opening and closing with fixed characters — which is what
+  `begin`/`end` is for.
 - **Longest-match choice is ordered, not measured.** For `|` the options are
   emitted longest fixed option first, which is exact for fixed-length options
   and an approximation otherwise.

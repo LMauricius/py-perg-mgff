@@ -38,6 +38,26 @@ def rule_tags(context: ElementTree.Element) -> list[str]:
     return [child.tag for child in context]
 
 
+# A `Parse` whose lines carry roles: the marker opens a line, the group holds
+# items and nothing else.
+MARKED_LINES = """
+t Lex (
+    d Marker = d
+        > class(Keyword)
+    d Name = ( a-z|A-Z )+
+    d NewLine = \\n
+    d File = ( (Marker)/(Name) )*
+)
+
+t Parse (
+    d Line = Marker Items NewLine
+    d Items = ( (Name)/(Group)/(Space) )*
+    d Space = ( \\_ )+
+    d Group = \\( Items \\)
+    d File = ( (Line)/(NewLine) )*
+)
+"""
+
 LEX_ONLY = """
 t Lex (
     d Digit = 0-9
@@ -74,18 +94,18 @@ def test_the_first_context_is_the_one_a_document_starts_in(toy):
 
 
 def test_a_run_of_whitespace_becomes_detect_spaces(toy):
-    assert "DetectSpaces" in rule_tags(context_named(toy, "Tokens"))
+    assert "DetectSpaces" in rule_tags(context_named(toy, "File"))
 
 
 def test_fixed_words_become_a_keyword_list(toy):
-    keyword = context_named(toy, "Tokens").find("keyword")
+    keyword = context_named(toy, "File").find("keyword")
     assert keyword is not None
     words = toy.find(f".//list[@name='{keyword.get('String')}']")
     assert [item.text for item in words] == ["let", "if", "else", "while"]
 
 
 def test_two_character_operators_use_detect2chars_and_come_first(toy):
-    tags = rule_tags(context_named(toy, "Tokens"))
+    tags = rule_tags(context_named(toy, "File"))
     assert "Detect2Chars" in tags
     # A length-based choice wants the longest match, and Kate takes the first
     # rule that matches, so `<=` must be tried before `<`.
@@ -95,14 +115,14 @@ def test_two_character_operators_use_detect2chars_and_come_first(toy):
 def test_a_single_character_becomes_detect_char(toy):
     chars = [
         rule.get("char")
-        for rule in context_named(toy, "Tokens").findall("DetectChar")
+        for rule in context_named(toy, "File").findall("DetectChar")
     ]
     assert {"+", "-", "*", "="} <= set(chars)
 
 
 def test_a_character_range_becomes_an_expression(toy):
     patterns = [
-        rule.get("String") for rule in context_named(toy, "Tokens").findall("RegExpr")
+        rule.get("String") for rule in context_named(toy, "File").findall("RegExpr")
     ]
     assert any("[0-9]" in pattern for pattern in patterns)
     assert any("\\p{L}" in pattern for pattern in patterns)
@@ -163,7 +183,7 @@ def test_a_class_naming_no_style_at_all_is_still_normal():
 
 
 def test_a_bracketing_production_becomes_a_context_that_folds(toy):
-    grammar = context_named(toy, "Grammar")
+    grammar = context_named(toy, "File")
     push = grammar.find("DetectChar[@context='Atom']")
     assert push is not None
     assert push.get("char") == "(" and push.get("beginRegion") == "Atom"
@@ -174,13 +194,29 @@ def test_a_bracketing_production_becomes_a_context_that_folds(toy):
 
 
 def test_the_bracket_rule_is_tried_before_the_token_of_the_same_shape(toy):
-    tags = [(child.tag, child.get("context")) for child in context_named(toy, "Grammar")]
-    assert tags.index(("DetectChar", "Atom")) < tags.index(("IncludeRules", "Tokens"))
+    tags = [(child.tag, child.get("context")) for child in context_named(toy, "File")]
+    # The bracket rule comes first, so `(` opens its context rather than being
+    # eaten by a token of the same shape.
+    assert tags[0] == ("DetectChar", "Atom")
+    assert all(context != "Atom" for tag, context in tags[1:] if tag != "DetectChar")
 
 
-def test_every_context_can_reach_the_tokens(toy):
+def test_a_context_holds_what_its_place_in_the_grammar_reaches(toy):
+    """Strictly: the tokens `Parse` names there, and no others."""
     for name in ("File", "Atom"):
-        assert context_named(toy, name).find("IncludeRules") is not None
+        patterns = [rule.get("String") for rule in context_named(toy, name).findall("RegExpr")]
+        assert any("[0-9]" in pattern for pattern in patterns)  # Number
+        assert any("\\p{L}" in pattern for pattern in patterns)  # Ident
+
+
+def test_a_context_the_grammar_does_not_reach_holds_nothing_of_it():
+    """A group whose lines hold no definitions holds no `d` rule either."""
+    tree = tree_of(MARKED_LINES)
+    # A marker spelled as a letter is a `WordDetect`, so the `d` of `Digit`
+    # does not open a definition.
+    assert context_named(tree, "File").find("WordDetect").get("String") == "d"
+    inner = context_named(tree, "Group")
+    assert [rule.get("char") for rule in inner.findall("DetectChar")] == [")", "("]
 
 
 # -- a grammar with only a Lex target ---------------------------------------

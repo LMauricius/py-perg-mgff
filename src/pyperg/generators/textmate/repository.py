@@ -2,44 +2,42 @@
 
 TextMate highlights with a stack of **patterns**. A `match` pattern consumes
 what it matched; a `begin`/`end` pattern pushes, matches its own `patterns`
-until the `end` expression fires, and pops. That is a pushdown machine over
-text, exactly like Kate's contexts, so the two backends read a grammar the same
-way — through `utils.highlight` — and differ only in how they spell the answer.
+until the `end` expression fires, and pops. That is the same pushdown machine
+Kate's contexts are, so both backends read a grammar through `utils.machine` and
+differ only in how they spell the answer.
 
-    Kate                          TextMate
-    ------------------------------------------------------------
-    context                       a repository entry
-    a rule pushing a context      begin / end, with nested patterns
-    `#pop`                        the `end` expression
-    IncludeRules                  {"include": "#name"}
-    itemData + default style      a scope name
-    <list> of keywords            \\b(?:a|b|c)\\b
+    Machine                Kate                   TextMate
+    --------------------------------------------------------------------
+    Context                <context>              a repository entry
+    Context.classes        attribute=             contentName
+    ContextRule.push       context="X"            begin, with nested patterns
+    ContextRule.pop        context="#pop"         the end expression
+    Context.line_end #pop  lineEndContext="#pop"  end: "$"
+    Context.line_end <C>   lineEndContext="C"     while: what C's lines open with
 
-Both targets start at a macro named `File`.
+**A context holds what its place in the grammar reaches, and nothing else.** A
+definition's `d` is a keyword because a line may open with one there; a subgroup
+holds no `d` rule because nothing spelling a definition is reachable inside one;
+a comment keeps its `contentName` across the lines its group spans.
 
-**`Lex` maps exactly.** Every token production `File` names becomes a repository
-entry of its own — one `match` pattern — and `tokens` includes them in the order
-`File` wrote them. Giving each production its own entry is what makes the output
-worth reading and editing by hand.
+**`while` is how a line role carries on.** A definition covers its alternative
+and attribute lines, which no `end` expression can recognise without lookahead —
+but `while` is exactly "this span continues as long as the next line starts like
+this", which is what the chained line contexts of the machine say.
 
-**`Parse` maps approximately**, in the same way and for the same reason as it
-does for Kate: what a pushdown machine can genuinely reproduce from a grammar is
-its *nesting*, so a production that brackets something becomes a `begin`/`end`
-entry, and everything else contributes nothing.
-
-One thing Kate must do that this backend does not: emit the loose terminals a
-`Parse` grammar mentions. Kate colours every character of a document, so an
-unmatched one is a gap; TextMate leaves unmatched text at the editor's default
-colour, which is what those terminals would have been given anyway.
+**`Lex` keeps two jobs**: the expression each token matches with, and the order
+tokens are tried in where a context holds several. A grammar with no `Parse`
+target is a machine of one context, and is built straight from that order.
 
 ```mermaid
 stateDiagram-v2
-    [*] --> patterns
-    patterns --> grammar: include
-    grammar --> tokens: include
-    grammar --> atom: ( begins
-    atom --> grammar: include
-    atom --> [*]: ) ends
+    [*] --> file
+    file --> definition: <code>d</code> begins
+    definition --> definition: <code>|</code> while
+    definition --> [*]: any other line ends
+    file --> comment: <code>#</code> begins
+    comment --> comment_group: <code>(</code> begins
+    comment --> [*]: end of line
 ```
 """
 
@@ -48,12 +46,18 @@ from __future__ import annotations
 import sys
 
 from ...diagnostics.errors import GeneratorError
+from ...mgff.common.rules import Reference, Rule
 from ...mgff.semantics.model import GrammarModel, Production, Target
 from ..utils.classes import classes_of
-from ..utils.highlight import brackets_of, reachable_productions, token_order
+from ..utils.highlight import token_order
+from ..utils.machine import POP, STAY
+from ..utils.machine import Context as MachineContext
+from ..utils.machine import ContextRule as MachineRule
+from ..utils.machine import MachineBuilder
 from ..utils.naming import NameAllocator, safe_identifier, snake_case
-from ..utils.regex import escape_character
-from .patterns import Pattern, include, match_pattern, matches_nothing
+from ..utils.regex import regex_of
+from ..utils.walk import single_character
+from .patterns import Pattern, include, match_pattern, matches_nothing, regex_for
 from .scopes import punctuation_scope, region_scope, scope_for
 
 #: The repository entries this backend always builds.
@@ -63,6 +67,12 @@ TOKENS_ENTRY = "tokens"
 #: The targets the backend understands.
 LEX_TARGET = "Lex"
 PARSE_TARGET = "Parse"
+
+#: How a line role says it is over: the first line that does not carry it on.
+#: Zero-width and anchored at the line's start, so the line is then read by
+#: whatever the role was written inside, exactly as it would have been.
+#: An indent comes before the marker, since layout is arbitrary in MGFF.
+CARRIES_ON = r"^(?!\s*(?:{})|\s*$)"
 
 
 class RepositoryBuilder:
@@ -82,7 +92,11 @@ class RepositoryBuilder:
         #: What a document is matched against before anything has been pushed.
         self.top: list[Pattern] = []
         self.names = NameAllocator({GRAMMAR_ENTRY, TOKENS_ENTRY})
-        self._bracketing: list[tuple[Production, tuple[str, str]]] | None = None
+        #: The pairs an editor folds and auto-closes, from the spans that nest.
+        self.pairs: list[tuple[str, str]] = []
+        #: Every context of the machine, and the entry each push was given.
+        self.contexts: dict[str, MachineContext] = {}
+        self.pushed: dict[str, str] = {}
         if self.lex is None and self.parse is None:
             raise GeneratorError(
                 "the grammar has no `Lex` or `Parse` target; the TextMate backend "
@@ -105,18 +119,15 @@ class RepositoryBuilder:
     def build(self) -> None:
         """Build every repository entry, and the patterns a document starts in.
 
-        A grammar with a `Parse` target starts at `grammar`, which reaches
-        everything; one with only tokens starts at `tokens`. The entries are
-        built in the order they should be read, since a repository is written
-        out as it was filled in.
+        A grammar with a `Parse` target is spelled from the machine; one with
+        only tokens is the flat list `Lex` names, in that order.
         """
         if self.parse is not None:
-            self.build_grammar()
-            self.build_bracket_entries()
-        if self.lex is not None:
+            self.build_machine()
+        else:
+            assert self.lex is not None
             self.build_tokens(self.lex)
-        start = GRAMMAR_ENTRY if self.parse is not None else TOKENS_ENTRY
-        self.top = [include(start)]
+            self.top = [include(TOKENS_ENTRY)]
 
     def top_patterns(self) -> list[Pattern]:
         """What a document is matched against before anything has been pushed."""
@@ -126,15 +137,197 @@ class RepositoryBuilder:
         """Every entry, in the order they were built."""
         return self.entries
 
+    def bracket_pairs(self) -> list[tuple[str, str]]:
+        """The character pairs an editor should fold and auto-close."""
+        return self.pairs
+
+    # -- the machine -------------------------------------------------------
+
+    def build_machine(self) -> None:
+        """Spell the machine: the starting context on top, a span per push."""
+        assert self.parse is not None
+        order = token_order(self.lex) if self.lex is not None else []
+        machine = MachineBuilder(self.parse, order).build()
+        self.contexts = machine.contexts
+
+        start = machine.contexts.get(machine.start)
+        if start is None:
+            raise GeneratorError(
+                f"target {PARSE_TARGET!r} describes no structure to highlight"
+            )
+        # `grammar` is filled in place, so it is written out ahead of the spans
+        # it names, and a span reaching back to it finds it already there.
+        patterns: list[Pattern] = []
+        self.entries[GRAMMAR_ENTRY] = {"patterns": patterns}
+        self.top = [include(GRAMMAR_ENTRY)]
+        patterns.extend(self.patterns_of(start))
+
+    def patterns_of(self, context: MachineContext) -> list[Pattern]:
+        """A context's rules as patterns: a span to include, or a match.
+
+        A rule that only pops is left out — it is the `end` of the entry this
+        context belongs to — and so is a look-ahead, which is Kate's way of
+        leaving a chain and `while`'s job here.
+        """
+        patterns: list[Pattern] = []
+        for rule in context.rules:
+            if rule.match.look_ahead or (rule.pop and not rule.push):
+                continue
+            if rule.push:
+                entry = self.span_entry(rule)
+                if entry is not None:
+                    patterns.append(include(entry))
+            else:
+                pattern = self.match_of(rule)
+                if pattern is not None:
+                    patterns.append(pattern)
+        return patterns
+
+    def span_entry(self, rule: MachineRule) -> str | None:
+        """The entry a push rule opens, built once per opening.
+
+        A context entered by several characters — an alternative line opens with
+        `|` or with `/` — becomes one entry per opening, since the opening is
+        part of the entry here rather than a rule pointing at it.
+        """
+        context = self.contexts.get(rule.push or "")
+        if context is None:
+            return None
+        opening = regex_for_rule(rule, self.lookup)
+        if opening is None:
+            return None
+        key = f"{rule.push}:{opening}"
+        if key in self.pushed:
+            return self.pushed[key]
+
+        name = self.names.allocate(
+            snake_case(safe_identifier(context.origin or context.name)) or "span"
+        )
+        self.pushed[key] = name
+        entry: Pattern = {}
+        self.entries[name] = entry
+        entry.update(self.span_pattern(context, rule, opening))
+        return name
+
+    def span_pattern(
+        self, context: MachineContext, rule: MachineRule, opening: str
+    ) -> Pattern:
+        """One span: where it begins, where it ends, and what it holds.
+
+        Three ways to end, in the order the machine offers them: a closing
+        character, which is also the pair an editor folds; the end of the line;
+        or the first line that does not carry the role on, which is `while`.
+        """
+        scope = scope_for(rule.classes, self.language)
+        pattern: Pattern = {
+            "name": region_scope(context.origin or context.name, self.language),
+            "begin": opening,
+            "beginCaptures": {
+                "0": {
+                    "name": scope
+                    or punctuation_scope(context.origin, self.language, "begin")
+                }
+            },
+        }
+        content = scope_for(context.classes, self.language)
+        if content is not None:
+            pattern["contentName"] = content
+
+        closing = self.closing_rule(context)
+        if closing is not None:
+            closing_regex = regex_for_rule(closing, self.lookup) or "$"
+            pattern["end"] = closing_regex
+            closing_scope = scope_for(closing.classes, self.language)
+            pattern["endCaptures"] = {
+                "0": {
+                    "name": closing_scope
+                    or punctuation_scope(context.origin, self.language, "end")
+                }
+            }
+            self.record_pair(opening, closing)
+        elif context.line_end == POP or context.line_end == STAY:
+            # A role of a single line ends where its line does.
+            pattern["end"] = "$"
+        else:
+            pattern["end"] = self.carry_expression(context)
+
+        pattern["patterns"] = self.patterns_of(context) + self.chained_patterns(context)
+        return pattern
+
+    def closing_rule(self, context: MachineContext) -> MachineRule | None:
+        """The rule that leaves a context on a character of its own."""
+        for rule in context.rules:
+            if rule.pop and not rule.push and not rule.match.look_ahead:
+                return rule
+        return None
+
+    def record_pair(self, opening: str, closing: MachineRule) -> None:
+        """Remember a fixed pair, which the editor folds and auto-closes."""
+        open_char = opening[-1] if len(opening) <= 2 else ""
+        close_char = single_character(closing.match.rule) or ""
+        pair = (open_char, close_char)
+        if open_char and close_char and pair not in self.pairs:
+            self.pairs.append(pair)
+
+    # -- chains ------------------------------------------------------------
+
+    def chain_of(self, context: MachineContext) -> list[MachineContext]:
+        """The line contexts a role carries on into, in order.
+
+        A definition's alternative lines and attribute lines are states of their
+        own in the machine. TextMate has no way to move between them at the end
+        of a line, so the span holds all of their rules and lets `while` say how
+        long it lasts — a fair reading, since what the lines may hold is what
+        the grammar allows, only not in which order.
+        """
+        found: list[MachineContext] = []
+        name = context.line_end
+        while name not in (STAY, POP) and name not in [c.name for c in found]:
+            following = self.contexts.get(name)
+            if following is None or following is context:
+                break
+            found.append(following)
+            name = following.line_end
+        return found
+
+    def chained_patterns(self, context: MachineContext) -> list[Pattern]:
+        """What the lines a role carries on into may hold."""
+        patterns: list[Pattern] = []
+        for following in self.chain_of(context):
+            patterns.extend(self.patterns_of(following))
+        return patterns
+
+    def carry_expression(self, context: MachineContext) -> str:
+        """Where a role that reaches past its first line stops.
+
+        Built from the rules of the chained contexts: their openings are exactly
+        the markers a continuation line may begin with, so the role ends at the
+        first line beginning with none of them.
+
+        This is an `end` rather than a `while` on purpose. A `while` is tested at
+        the start of every line whatever is open at the time, and would cut a
+        group that spans lines in half; an `end` waits until the spans inside
+        have closed, which is the behaviour the machine describes.
+        """
+        openings: list[str] = []
+        for following in self.chain_of(context):
+            for rule in following.rules:
+                if rule.match.look_ahead:
+                    continue
+                found = regex_for_rule(rule, self.lookup)
+                if found is not None and found not in openings:
+                    openings.append(found)
+        if not openings:
+            return "^"  # nothing carries it on, so the next line ends it
+        return CARRIES_ON.format("|".join(openings))
+
     # -- Lex ---------------------------------------------------------------
 
     def build_tokens(self, lex: Target) -> None:
         """One entry per token `File` names, and one including them in order.
 
-        The order is the grammar's say in which token wins where two could
-        match, since TextMate takes the first pattern that matches at a
-        position. The including entry is filled in place, so it is written out
-        ahead of the tokens it names.
+        This is what a grammar with no `Parse` target amounts to: a machine of
+        one context, whose rules are the tokens, tried in the order written.
         """
         includes: list[Pattern] = []
         self.entries[TOKENS_ENTRY] = {"patterns": includes}
@@ -166,94 +359,106 @@ class RepositoryBuilder:
         """A `Lex` production by name, for the expressions that inline it."""
         return self.lex.productions.get(name) if self.lex is not None else None
 
-    # -- Parse -------------------------------------------------------------
+    # -- matching ----------------------------------------------------------
 
-    def build_grammar(self) -> None:
-        """What may appear anywhere: the bracketing entries, then the tokens.
+    def lookup(self, name: str) -> Production | None:
+        """A production of either target, for the expressions that inline it."""
+        found = self.parse.productions.get(name) if self.parse is not None else None
+        return found if found is not None else self.lex_lookup(name)
 
-        The brackets come first, so `(` opens its own span rather than being
-        eaten by an `LParen` token of the same shape.
+    def match_of(self, rule: MachineRule) -> Pattern | None:
+        """One machine rule as a pattern: an entry to include, or a match.
+
+        A rule that is nothing but a call becomes **an entry of its own**, named
+        after the macro and included wherever the macro is reachable. That costs
+        nothing at run time and is what makes the output worth reading — and
+        worth hand-tuning — instead of repeating one expression in every context
+        that can reach it. It is also spelled from the whole production, so a
+        choice of fixed words keeps its boundaries and the `Lu` of `Lucky` is
+        not a category.
         """
-        patterns: list[Pattern] = [
-            include(self.entry_name(production))
-            for production, _ in self.bracketing_productions()
-        ]
-        if self.lex is not None:
-            patterns.append(include(TOKENS_ENTRY))
-        self.entries[GRAMMAR_ENTRY] = {"patterns": patterns}
+        called = self.called_production(rule)
+        if called is not None:
+            name = self.token_entry(called, rule)
+            if name is not None:
+                return include(name)
+            return None
+        expression = regex_for_rule(rule, self.lookup)
+        if expression is None:
+            return None
+        return _match(expression, scope_for(rule.classes, self.language))
 
-    def build_bracket_entries(self) -> None:
-        """One `begin`/`end` entry per bracketing production.
+    def called_production(self, rule: MachineRule) -> Production | None:
+        """The production a plain match rule calls, when that is all it does."""
+        if rule.push or rule.pop or rule.match.look_ahead:
+            return None
+        if isinstance(rule.match.rule, Reference):
+            return self.lookup(rule.match.rule.name)
+        return None
 
-        The whole span is scoped `meta.<name>`, the brackets themselves carry the
-        production's own scope when it has one and a `punctuation.section` scope
-        when it does not, and the body includes `grammar` — which is what makes
-        the nesting recursive, and is the one thing a `match` pattern could not
-        have done.
+    def token_entry(self, production: Production, rule: MachineRule) -> str | None:
+        """The entry one token is filed under, built once and included after.
+
+        Keyed by the classes as well as the macro: the same name is a name
+        wherever it is written, but on an attribute line it is an attribute, and
+        the two want scopes of their own.
         """
-        for production, (opening, closing) in self.bracketing_productions():
-            scope = scope_for(classes_of(production), self.language)
-            self.entries[self.entry_name(production)] = {
-                "name": region_scope(production.name, self.language),
-                "begin": escape_character(opening),
-                "beginCaptures": {
-                    "0": {
-                        "name": scope
-                        or punctuation_scope(production.name, self.language, "begin")
-                    }
-                },
-                "end": escape_character(closing),
-                "endCaptures": {
-                    "0": {
-                        "name": scope
-                        or punctuation_scope(production.name, self.language, "end")
-                    }
-                },
-                "patterns": [include(GRAMMAR_ENTRY)],
-            }
-
-    def bracketing_productions(self) -> list[tuple[Production, tuple[str, str]]]:
-        """Every `Parse` production that wraps something in a fixed pair.
-
-        Computed once and cached, and also read by the generator, which turns the
-        same pairs into the bracket configuration VS Code folds and auto-closes
-        with.
-        """
-        if self._bracketing is None:
-            self._bracketing = [
-                (production, pair)
-                for production in self.parse_productions()
-                if (pair := brackets_of(production)) is not None
-            ]
-        return self._bracketing
-
-    def bracket_pairs(self) -> list[tuple[str, str]]:
-        """Just the character pairs, deduplicated, for the language configuration."""
-        found: list[tuple[str, str]] = []
-        for _, pair in self.bracketing_productions():
-            if pair not in found:
-                found.append(pair)
-        return found
-
-    def parse_productions(self) -> list[Production]:
-        """The `Parse` productions reachable from its `File`, `File` aside.
-
-        A production reached across the target boundary into `Lex` is left out:
-        its tokens are already matched by the `tokens` entry.
-        """
-        if self.parse is None:
-            return []
-        return reachable_productions(self.parse)
+        expression = regex_for_rule(rule, self.lookup)
+        if expression is None:
+            return None
+        # Keyed by the scope rather than the classes: `Normal` and no class at
+        # all both mean "no scope", and one entry serves both.
+        scope = scope_for(rule.classes, self.language)
+        name = self.entry_name(production, scope)
+        if name not in self.entries:
+            self.entries[name] = _match(expression, scope)
+        return name
 
     # -- naming ------------------------------------------------------------
 
-    def entry_name(self, production: Production) -> str:
+    def entry_name(self, production: Production, scope: str | None = None) -> str:
         """The repository key a production is filed under.
 
         Repository keys are conventionally lower case, and two targets may name
         a production the same, so the allocator is keyed by the production's
-        origin as well as its name — asking twice gives the same key back, which
-        is what lets `grammar` name an entry before it is built.
+        origin as well as its name — and by the scope it was reached with, since
+        the same name is a name in a body and an attribute on an attribute line.
         """
         wanted = snake_case(safe_identifier(production.name)) or "rule"
-        return self.names.allocate(wanted, key=f"{production.origin}:{production.name}")
+        return self.names.allocate(
+            wanted, key=f"{production.origin}:{production.name}:{scope or ''}"
+        )
+
+
+def _match(expression: str, scope: str | None) -> Pattern:
+    """A `match` pattern, scoped when its classes name a scope at all."""
+    pattern: Pattern = {}
+    if scope is not None:
+        pattern["name"] = scope
+    pattern["match"] = expression
+    return pattern
+
+
+def regex_for_rule(rule: MachineRule, lookup) -> str | None:
+    """The expression a machine rule matches with.
+
+    A plain call is spelled from the production it names, which is what keeps
+    the word boundaries a keyword list is worth; anything else is spelled from
+    the rule tree it was built with.
+    """
+    node: Rule = rule.match.rule
+    found: str | None
+    if isinstance(node, Reference):
+        production = lookup(node.name)
+        if production is None:
+            return None
+        try:
+            found = regex_for(production, lookup)
+        except GeneratorError:
+            return None
+    else:
+        found = regex_of(node, lookup)
+    if found is not None and rule.match.word_boundary:
+        # A marker spelled as a letter must not open a line inside a word.
+        found = rf"\b{found}\b"
+    return found

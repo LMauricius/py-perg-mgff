@@ -24,13 +24,14 @@ optionally pushing another context, popping back, or staying put.
 
 ```mermaid
 stateDiagram-v2
-    direction LR
     [*] --> File
-    File --> Grammar: include
-    Grammar --> Tokens: include
-    Grammar --> Atom: <code>(</code> pushes
-    Atom --> Grammar: include
-    Atom --> Grammar: <code>)</code> pops
+    File --> Definition: <code>d</code> pushes
+    Definition --> DefinitionLine: line end
+    DefinitionLine --> AltLine: <code>|</code> pushes
+    DefinitionLine --> [*]: any other line pops the chain
+    File --> CommentLine: <code>#</code> pushes
+    CommentLine --> CommentGroup: <code>(</code> pushes
+    CommentLine --> [*]: line end
 ```
 
 That machine reads nesting, which is why brackets and comments fold correctly in
@@ -38,11 +39,12 @@ Kate. What it cannot do is backtrack, or let a rule call itself. So:
 
 - **`Lex` maps exactly.** A token is a regular pattern, and a regular pattern is
   precisely what a Kate rule matches.
-- **`Parse` maps approximately.** The part of a grammar Kate can genuinely
-  reproduce is its *nesting*, so that is the part the backend uses; the rest
-  contributes its terminals. The output highlights and folds what your grammar
-  describes, but it does not reject what your grammar would reject. If you need
-  a real parser, that is what the other backends are for.
+- **`Parse` maps closely.** Every context holds what its place in the grammar
+  reaches, so a marker is a keyword only where a line may open with one and a
+  group holds only what its own lines may hold. What Kate still cannot do is
+  reject: the output highlights and folds what your grammar describes, but a
+  malformed file is coloured all the same. If you need a real parser, that is
+  what the other backends are for.
 
 ---
 
@@ -83,44 +85,64 @@ expression, and an expression cannot recurse.
 
 ## The `Parse` target
 
-`File` is the starting production here too. From it the backend looks for
-**bracketing productions** — a production with an alternative that opens and
-closes with a fixed character:
+`File` is the starting production here too, and from it the backend derives a
+**machine**: a set of contexts, where a context is *a place a line may begin*
+and holds the rules its place in the grammar reaches — and nothing else.
+
+That last part is what makes the output context-sensitive. A marker is a keyword
+where a line may open with one and ordinary text everywhere else; a group whose
+lines hold no definitions holds no `d` rule; a comment stays a comment across
+the lines a group inside it spans.
+
+A production becomes one of three things:
+
+| Interpretation | Shape | Becomes |
+| --- | --- | --- |
+| Span | opens with a fixed character and closes with one | a context, pushed by the opening and popped by the closing, and a region that folds |
+| Span | opens with a fixed character and runs to a line break | a context, pushed by the opening and popped where the line ends |
+| Token | carries a `class` and has a regular form | one rule, coloured by its classes |
+| Transparent | anything else | nothing of its own; its parts belong to whoever reached it |
 
 ```mgff
 t Parse (
-    d Atom = Number
-           / Ident
-           / \( Expr \)
-
-    d Expr = Atom Op Expr
-           / Atom
-
-    d File = ( Expr )*
+    d Definition = DefMarker WS Head Gap EqualsMarker Items NL
+    d Comment    = CommentMarker Items NL
+                 > class(Comment)
+    d Group      = \( Items \)
+    d Line       = (Definition)/(Comment)
+    d File       = ( (Line)/(NL) )*
 )
 ```
 
-`Atom` brackets with `(` and `)`, so it becomes a context of its own: `(` pushes
-it and opens a foldable region, `)` pops it and closes one. `Expr` brackets
-nothing, so it contributes its terminals and no context.
+`Definition` opens with `d` and runs to the line break, so `d` pushes a context
+that pops where the line ends. `Comment` does the same and carries a class, so
+everything that context holds is a comment — the lines a `Group` inside it
+reaches included, since the group is a context of its own and Kate pops only the
+context on top.
 
-Four contexts come out of a grammar with both targets:
+**A line role may reach past its first line.** A definition covers its `|`, `/`
+and `>` lines, and those become a **chain**: the context of the first line names
+the next in `lineEndContext`, that one loops on itself, and a line beginning with
+something none of its rules knows pops the whole chain through a `lookAhead`
+rule — so the scope below reads that line from its first character.
 
-| Context   | What it holds                                                              |
-| --------- | -------------------------------------------------------------------------- |
-| `File`    | The initial context. An entry point and nothing else.                       |
-| `Grammar` | What may appear anywhere: the bracket rules, then the tokens, then any loose terminals the `Parse` rules mention. |
-| `Tokens`  | The `Lex` rules.                                                            |
-| `<Name>`  | One per bracketing production, popped by its closing character.             |
+**A marker spelled as a letter matches between deliminators.** `d`, `t` and `p`
+become `WordDetect` rather than `DetectChar`, so the `d` of `Digit` opens
+nothing.
 
-The bracket rules come before the tokens, so `(` opens its context rather than
-being eaten by an `LParen` token of the same shape. Loose terminals come last,
-so a character that is already a token is matched as that token.
+**`Lex` keeps two jobs**: the expression each token matches with, and the order
+tokens are tried in where a context holds several. Since a context holds only
+what it reaches, **`Parse` names every token it wants coloured** — the ones a
+parser would skip among them:
 
-A grammar with only a `Lex` target starts at `Tokens` and stops there. A target
-that is neither `Lex` nor `Parse` is skipped, with a note on standard error.
+```mgff
+d Skipped = Space
+          / Comment
+```
 
----
+A grammar with only a `Lex` target is a machine of one context, `Tokens`, built
+straight from that order. A target that is neither `Lex` nor `Parse` is skipped,
+with a note on standard error.
 
 ## Attributes
 
@@ -357,8 +379,7 @@ gives `out/Toy.xml`:
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE language SYSTEM "language.dtd">
-<language name="Toy" version="1" kateversion="5.79" section="Sources"
-          extensions="*.toy" mimetype="text/x-toy">
+<language name="Toy" version="1" kateversion="5.79" section="Sources" extensions="*.toy" mimetype="text/x-toy">
   <highlighting>
     <list name="keyword">
       <item>let</item>
@@ -368,22 +389,12 @@ gives `out/Toy.xml`:
     </list>
     <contexts>
       <context name="File" attribute="Normal" lineEndContext="#stay">
-        <IncludeRules context="Grammar"/>
-      </context>
-      <context name="Grammar" attribute="Normal" lineEndContext="#stay">
         <DetectChar char="(" attribute="Normal" context="Atom" beginRegion="Atom"/>
-        <IncludeRules context="Tokens"/>
-      </context>
-      <context name="Atom" attribute="Normal" lineEndContext="#stay">
-        <DetectChar char=")" attribute="Normal" context="#pop" endRegion="Atom"/>
-        <IncludeRules context="Grammar"/>
-      </context>
-      <context name="Tokens" attribute="Normal" lineEndContext="#stay">
-        <DetectSpaces attribute="Normal"/>
         <RegExpr String="#[\p{L}\p{Nd} \t]*" attribute="Comment"/>
         <keyword String="keyword" attribute="Keyword"/>
         <RegExpr String="[0-9]+(?:\.[0-9]+)?" attribute="Float.Literal"/>
         <RegExpr String="[\p{L}_][\p{L}\p{Nd}_]*" attribute="Variable"/>
+        <DetectSpaces attribute="Normal"/>
         <Detect2Chars char="&lt;" char1="=" attribute="Operator"/>
         <Detect2Chars char="&gt;" char1="=" attribute="Operator"/>
         <Detect2Chars char="=" char1="=" attribute="Operator"/>
@@ -391,8 +402,22 @@ gives `out/Toy.xml`:
         <DetectChar char="-" attribute="Operator"/>
         <DetectChar char="*" attribute="Operator"/>
         <DetectChar char="=" attribute="Operator"/>
-        <DetectChar char="(" attribute="Normal"/>
-        <DetectChar char=")" attribute="Normal"/>
+      </context>
+      <context name="Atom" attribute="Normal" lineEndContext="#stay">
+        <DetectChar char=")" attribute="Normal" context="#pop" endRegion="Atom"/>
+        <DetectChar char="(" attribute="Normal" context="Atom" beginRegion="Atom"/>
+        <RegExpr String="#[\p{L}\p{Nd} \t]*" attribute="Comment"/>
+        <keyword String="keyword" attribute="Keyword"/>
+        <RegExpr String="[0-9]+(?:\.[0-9]+)?" attribute="Float.Literal"/>
+        <RegExpr String="[\p{L}_][\p{L}\p{Nd}_]*" attribute="Variable"/>
+        <DetectSpaces attribute="Normal"/>
+        <Detect2Chars char="&lt;" char1="=" attribute="Operator"/>
+        <Detect2Chars char="&gt;" char1="=" attribute="Operator"/>
+        <Detect2Chars char="=" char1="=" attribute="Operator"/>
+        <DetectChar char="+" attribute="Operator"/>
+        <DetectChar char="-" attribute="Operator"/>
+        <DetectChar char="*" attribute="Operator"/>
+        <DetectChar char="=" attribute="Operator"/>
       </context>
     </contexts>
     <itemDatas>
@@ -414,7 +439,8 @@ Reading it back against the grammar: the four keywords became a hashed list, the
 length-based operators put their two-character forms first, `class(Float
 Literal)` kept both classes in the itemData name while colouring as a float,
 `autoclass` found `Comment` by name and `Variable` through `Ident`, and the
-bracketing `Atom` production became a context that folds.
+bracketing `Atom` production became a context that folds — holding the tokens
+`Parse` names inside it, which is why `Skipped` is written at all.
 
 ### Trying it out
 
@@ -431,9 +457,15 @@ pandoc --syntax-definition out/Toy.xml sample.md -o sample.html
 
 ## Limitations
 
-- **`Parse` output is an approximation.** It highlights and folds; it does not
-  validate. A grammar that accepts only well-formed input will still colour
+- **`Parse` output does not validate.** It highlights and folds what your
+  grammar describes; a grammar that accepts only well-formed input still colours
   malformed input.
+- **A context holds what it reaches.** A token `Parse` never names is never
+  matched, which is why a grammar written for a highlighter names the tokens a
+  parser would skip.
+- **A chain is left by the line that follows it.** A definition ends at the
+  first line beginning with none of `|`, `/`, `>` or `#`, which is what Kate
+  can see; whether that line *should* have followed is not.
 - **No recursive tokens.** A `Lex` production that reaches itself is rejected,
   because a Kate rule matches with an expression.
 - **One style per rule.** Extra classes survive in the itemData name, but Kate

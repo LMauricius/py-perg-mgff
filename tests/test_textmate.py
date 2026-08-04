@@ -73,22 +73,24 @@ def test_a_document_starts_at_the_grammar_entry(toy):
 
 
 def test_the_grammar_entry_tries_brackets_before_tokens(toy):
-    # `(` must open its own span rather than being eaten by the `LParen` token
-    # of the same shape.
-    assert included(entry(toy, "grammar")) == ["atom", "tokens"]
+    # `(` must open its own span rather than being eaten by a token of the same
+    # shape, and the tokens follow in the order `Lex` names them.
+    included_here = included(entry(toy, "grammar"))
+    assert included_here[0] == "atom"
+    assert set(included_here[1:]) == {"comment", "keyword", "number", "ident", "space", "op"}
 
 
-def test_every_token_file_names_becomes_an_entry_of_its_own(toy):
-    assert included(entry(toy, "tokens")) == [
-        "space",
-        "comment",
-        "keyword",
-        "number",
-        "ident",
-        "op",
-        "lparen",
-        "rparen",
-    ]
+def test_every_token_a_context_reaches_becomes_an_entry_of_its_own(toy):
+    # One entry per token, included where it is reachable, rather than the same
+    # expression written out in every context that can reach it.
+    for name in ("space", "comment", "keyword", "number", "ident", "op"):
+        assert "match" in entry(toy, name)
+
+
+def test_a_token_the_grammar_does_not_reach_is_not_emitted(toy):
+    # Strictly: `Parse` names what may appear, and it never names `LParen` —
+    # the bracket is the span `Atom` opens.
+    assert "lparen" not in toy["repository"]
 
 
 def test_a_helper_production_is_inlined_rather_than_emitted(toy):
@@ -117,7 +119,6 @@ def test_normal_is_no_scope_at_all(toy):
     # Unmatched text is already the editor's default colour, so `Normal` names
     # nothing rather than naming a style that means "unstyled".
     assert "name" not in entry(toy, "space")
-    assert "name" not in entry(toy, "lparen")
 
 
 @pytest.mark.parametrize(
@@ -173,9 +174,10 @@ def test_a_bracketing_production_becomes_a_span_that_nests(toy):
     atom = entry(toy, "atom")
     assert (atom["begin"], atom["end"]) == ("\\(", "\\)")
     assert atom["name"] == "meta.atom.toy"
-    # Including the grammar back into the span is what makes nesting recursive,
-    # and is the one thing a `match` pattern could not have done.
-    assert included(atom) == ["grammar"]
+    # A span holds what its place in the grammar reaches, itself among them,
+    # which is what makes the nesting recursive — the one thing a `match`
+    # pattern could not have done.
+    assert "atom" in included(atom)
 
 
 def test_the_brackets_themselves_are_scoped_as_punctuation(toy):
