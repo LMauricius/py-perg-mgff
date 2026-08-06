@@ -239,7 +239,7 @@ def test_the_manifest_points_at_the_grammar_it_wrote(written):
 
 def test_a_version_written_for_kate_is_padded_out_for_the_manifest():
     # `version(1)` is what the Kate backend wants; a manifest needs three parts.
-    assert TextMateGenerator().package(_model("d Language > version(1)\n" + LEX_ONLY))[
+    assert TextMateGenerator().package(_model("> version(1)\n" + LEX_ONLY))[
         "version"
     ] == "1.0.0"
 
@@ -254,7 +254,7 @@ def test_the_configuration_folds_what_the_grammar_nests(written):
     assert configuration["autoClosingPairs"] == [{"open": "(", "close": ")"}]
 
 
-def test_comment_markers_come_from_the_metadata(written):
+def test_comment_markers_come_from_the_file_attributes(written):
     configuration = json.loads(
         (written / "language-configuration.json").read_text(encoding="utf-8")
     )
@@ -291,7 +291,7 @@ def test_a_target_without_a_file_macro_is_reported():
 
 def test_a_block_comment_needs_both_markers():
     generator = TextMateGenerator()
-    model = _model("d Language > blockComment(/*)\n" + LEX_ONLY)
+    model = _model("> blockComment(/*)\n" + LEX_ONLY)
     with pytest.raises(GeneratorError, match="opening and the closing marker"):
         generator.language_configuration(model, generator.builder(model))
 

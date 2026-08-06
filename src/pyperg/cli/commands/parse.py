@@ -49,6 +49,9 @@ def _render_scope(root: Scope, name: str, spans: bool, absorbed: bool) -> str:
 
 
 def _render_body(scope: Scope, depth: int, out: list[str], spans: bool, absorbed: bool) -> None:
+    if scope.attribute_list:
+        _write(out, depth, ">", _render_items(scope.attribute_list), None)
+
     for key, macro in scope.sources.items():
         # A macro whose key is not its own signature was absorbed from a prefix
         # scope, so it is already listed there under its local name.

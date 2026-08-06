@@ -2,9 +2,9 @@
 # Deliberately the same shape as `kate.mgff`, so the two backends can be read
 # against each other, plus the settings only an editor extension needs.
 
-d Language > name(Toy) extensions(*.toy) mimetype(text/x-toy)
-           > lineComment(#) blockComment(#{ #})
-           > description(Toy language support, generated from MGFF.)
+> name(Toy) extensions(*.toy) mimetype(text/x-toy)
+> lineComment(#) blockComment(#{ #})
+> description(Toy language support, generated from MGFF.)
 
 # A named list of attributes, reused by the macros below.
 d Highlighted > autoclass

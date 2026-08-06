@@ -237,9 +237,23 @@ def test_an_attribute_only_macro_names_a_list_that_is_spliced_in():
     assert attributes == {"token": [], "class": ["Keyword"]}
 
 
-def test_a_file_scope_attribute_list_is_kept_as_metadata():
-    model = model_of("d Language > name(Toy)\nt Lex (\n d Int = 0-9\n)")
-    assert model.metadata["Language"] == {"name": ["Toy"]}
+def test_the_attributes_at_the_top_of_a_file_describe_the_grammar():
+    model = model_of("> name(Toy) section(Sources)\nt Lex (\n d Int = 0-9\n)")
+    assert model.attributes == {"name": ["Toy"], "section": ["Sources"]}
+
+
+def test_the_attributes_at_the_top_of_a_target_describe_the_phase():
+    text = "t Lex (\n d Int = 0-9\n)\nt Parse (\n > post(Lex) over(tokens)\n d F = Int\n)"
+    model = model_of(text)
+    assert model.target("Parse").attributes == {"post": ["Lex"], "over": ["tokens"]}
+    assert model.target("Lex").attributes == {}
+
+
+def test_a_scope_may_name_an_attribute_list_of_its_own():
+    # A scope's attributes come above its definitions, so the list it names is
+    # written below; the reference is followed once the whole file is read.
+    text = "> Shared\nd Shared > name(Toy)\nt Lex (\n d Int = 0-9\n)"
+    assert model_of(text).attributes == {"name": ["Toy"]}
 
 
 def test_an_attribute_list_that_names_itself_is_reported():

@@ -23,10 +23,12 @@ class DumpGenerator(Generator):
     def render(self, model: GrammarModel) -> str:
         """Render the model without touching the file system."""
         lines = [f"grammar {model.name}"]
-        for name, attributes in model.metadata.items():
-            lines.append(f"  {name} > {_render_attributes(attributes)}")
+        if model.attributes:
+            lines.append(f"  > {_render_attributes(model.attributes)}")
         for target in model.targets:
             lines.append(f"  target {target.name}")
+            if target.attributes:
+                lines.append(f"    > {_render_attributes(target.attributes)}")
             for production in target.productions.values():
                 marker = production.choice_symbol or "="
                 lines.append(f"    {production.name} ({len(production.alternatives)} alt, {marker})")

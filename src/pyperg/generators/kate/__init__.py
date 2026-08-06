@@ -14,26 +14,14 @@ from ...mgff.semantics.model import GrammarModel
 from ..base import Generator
 from ..utils.emit import Emitter
 from ..utils.naming import pascal_case, safe_identifier
+from ..utils.settings import setting
 from ..utils.xmlwrite import Element
 from .contexts import ContextBuilder
-
-#: The attribute-only macro a grammar describes itself with.
-METADATA_MACRO = "Language"
 
 #: The version of Kate's format the output declares.
 KATE_VERSION = "5.79"
 
 _HEADER = '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE language SYSTEM "language.dtd">'
-
-
-def _setting(metadata: dict[str, list[str]], key: str, default: str | None) -> str | None:
-    """One value from the `Language` macro, or a default.
-
-    An attribute written with several arguments joins them with a space, so
-    `extensions(*.calc *.c1)` reaches Kate as the list it looks like.
-    """
-    values = metadata.get(key)
-    return " ".join(values) if values else default
 
 
 class KateGenerator(Generator):
@@ -53,13 +41,12 @@ class KateGenerator(Generator):
     def language_name(self, model: GrammarModel) -> str:
         """What the highlighted language is called.
 
-        Taken from `d Language > name(…)` when the grammar says so, and from the
-        grammar file's own name otherwise.
+        Taken from the file's own `> name(…)` when the grammar says so, and from
+        the grammar file's name otherwise.
         """
-        metadata = model.metadata.get(METADATA_MACRO, {})
         # The words of a file name come first, so `my-toy.mgff` gives `MyToy`
         # rather than a spelled-out hyphen.
-        return _setting(metadata, "name", None) or safe_identifier(
+        return setting(model.attributes, "name", None) or safe_identifier(
             pascal_case(Path(model.name).stem), fallback="Grammar"
         )
 
@@ -85,18 +72,17 @@ class KateGenerator(Generator):
 
     def language_element(self, model: GrammarModel) -> Element:
         """The root element, carrying everything Kate files the language under."""
-        metadata = model.metadata.get(METADATA_MACRO, {})
         name = self.language_name(model)
         attributes = {
             "name": name,
-            "version": _setting(metadata, "version", "1"),
-            "kateversion": _setting(metadata, "kateversion", KATE_VERSION),
-            "section": _setting(metadata, "section", "Sources"),
-            "extensions": _setting(metadata, "extensions", f"*.{name.lower()}"),
-            "mimetype": _setting(metadata, "mimetype", None),
-            "author": _setting(metadata, "author", None),
-            "license": _setting(metadata, "license", None),
-            "priority": _setting(metadata, "priority", None),
+            "version": setting(model.attributes, "version", "1"),
+            "kateversion": setting(model.attributes, "kateversion", KATE_VERSION),
+            "section": setting(model.attributes, "section", "Sources"),
+            "extensions": setting(model.attributes, "extensions", f"*.{name.lower()}"),
+            "mimetype": setting(model.attributes, "mimetype", None),
+            "author": setting(model.attributes, "author", None),
+            "license": setting(model.attributes, "license", None),
+            "priority": setting(model.attributes, "priority", None),
         }
         return Element(
             "language", {key: value for key, value in attributes.items() if value is not None}
@@ -108,11 +94,10 @@ class KateGenerator(Generator):
         MGFF has no spelling for case-insensitive matching, so keywords are
         case-sensitive unless the grammar says otherwise.
         """
-        metadata = model.metadata.get(METADATA_MACRO, {})
         general = root.child("general")
         general.child(
             "keywords",
-            casesensitive=_setting(metadata, "casesensitive", "1"),
-            weakDeliminator=_setting(metadata, "weakDeliminator", None),
-            additionalDeliminator=_setting(metadata, "additionalDeliminator", None),
+            casesensitive=setting(model.attributes, "casesensitive", "1"),
+            weakDeliminator=setting(model.attributes, "weakDeliminator", None),
+            additionalDeliminator=setting(model.attributes, "additionalDeliminator", None),
         )

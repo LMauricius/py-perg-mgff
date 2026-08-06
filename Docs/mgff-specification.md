@@ -152,7 +152,7 @@ ordinary text.
 | `d`        | Macro definition: `d Head = Body`.             |
 | `/`        | Order-based alternative of the current macro.  |
 | `\|`       | Length-based alternative of the current macro. |
-| `>`        | Attributes of the current macro.               |
+| `>`        | Attributes of the current macro, or of the scope. |
 | `t`        | Generation target: `t Name ( … )`.             |
 | `p`        | Name prefix: `p Prefix ( … )`.                 |
 
@@ -275,6 +275,33 @@ by the generator, not by MGFF.
 A macro may also be defined outside every target and prefix. It then carries
 no prefix and is visible to all targets, which makes the outermost level the
 natural home for shared utility macros.
+
+### Attributes of a scope
+
+A `>` line written **before the first definition or nested scope** of a scope has
+no macro to attach to, and carries the attributes of that scope itself: of the
+file, of a target, or of a prefix.
+
+```
+> name(Toy) section(Sources) extensions(*.toy)
+> license(MIT)
+
+t Parse (
+    > post(Lex) over(tokens)
+
+    d File = ( Expr )*
+)
+```
+
+The file's attributes describe the grammar as a whole, which is where a generator
+reads settings such as the name of the language it generates. A target's describe
+the phase — see *Targets* in Part 3.
+
+Several `>` lines accumulate, and `#` lines between them are ignored, exactly as
+for a macro. A named list of attributes may be spliced in by naming it, and since
+the attributes come above the definitions the list itself is written below them.
+A `>` line **after** the scope's first definition or nested scope is an error: it
+neither attaches to a macro nor sits where a scope's own attributes belong.
 
 ---
 

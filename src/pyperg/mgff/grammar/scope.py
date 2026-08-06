@@ -26,6 +26,10 @@ since a scope is absorbed only after it has absorbed its own children.
 
 A `t Name ( … )` target keeps its macros to itself: which target may call
 another's macros is a decision of the generator, not of MGFF.
+
+A scope carries **attributes** of its own: the `>` lines written at its top,
+before any definition or nested scope. They describe the file, the target or the
+prefix as a whole, the way a macro's `>` lines describe the macro.
 """
 
 from __future__ import annotations
@@ -90,17 +94,27 @@ class Scope:
 
     The file scope has no parent and an empty name. A prefix scope is named by the
     literal text it prepends; a target by the phase it generates.
+
+    `attribute_list` holds the items of the `>` lines written at the scope's top,
+    accumulated into one list. They describe the scope itself — the language a
+    file generates, the phase a target runs in — and what one means is Part 3.
     """
 
     span: Span
     name: str = ""
     parent: Scope | None = None
+    attribute_list: list[Item] = field(default_factory=list)
     #: The definitions filed here, and the lines they were read from, under the
     #: same keys. A prefix scope's names appear in both, behind the prefix.
     macros: dict[str, MacroDefinition] = field(default_factory=dict)
     sources: dict[str, MacroSource] = field(default_factory=dict)
     subscopes: dict[str, Scope] = field(default_factory=dict)
     targets: dict[str, TargetScope] = field(default_factory=dict)
+
+    @property
+    def attributes(self) -> list[Item]:
+        """Every attribute of the scope, named as a macro's are for one reader."""
+        return self.attribute_list
 
     # -- construction ------------------------------------------------------
 

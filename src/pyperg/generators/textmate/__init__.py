@@ -33,10 +33,8 @@ from ...mgff.semantics.model import GrammarModel
 from ..base import Generator
 from ..utils.classes import words_of
 from ..utils.naming import pascal_case, safe_identifier
+from ..utils.settings import setting, values
 from .repository import RepositoryBuilder
-
-#: The attribute-only macro a grammar describes itself with.
-METADATA_MACRO = "Language"
 
 #: Where the grammar sits inside the generated extension.
 SYNTAXES_DIR = "syntaxes"
@@ -53,21 +51,6 @@ VSCODE_ENGINE = "^1.75.0"
 GRAMMAR_SCHEMA = (
     "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json"
 )
-
-
-def _setting(metadata: dict[str, list[str]], key: str, default: str | None) -> str | None:
-    """One value from the `Language` macro, or a default.
-
-    An attribute written with several arguments joins them with a space, the
-    same way the Kate backend reads one.
-    """
-    values = metadata.get(key)
-    return " ".join(values) if values else default
-
-
-def _values(metadata: dict[str, list[str]], key: str) -> list[str]:
-    """Every argument of one `Language` attribute, or an empty list."""
-    return list(metadata.get(key) or ())
 
 
 def _write_json(path: Path, data: dict) -> None:
@@ -121,11 +104,10 @@ class TextMateGenerator(Generator):
     def language_name(self, model: GrammarModel) -> str:
         """What the language is called, as a person reads it.
 
-        From `d Language > name(…)`, and from the grammar file's own name
+        From the file's own `> name(…)`, and from the grammar file's name
         otherwise, exactly as the Kate backend decides it.
         """
-        metadata = model.metadata.get(METADATA_MACRO, {})
-        return _setting(metadata, "name", None) or safe_identifier(
+        return setting(model.attributes, "name", None) or safe_identifier(
             pascal_case(Path(model.name).stem), fallback="Grammar"
         )
 
@@ -136,8 +118,7 @@ class TextMateGenerator(Generator):
         identifier is compared verbatim. The name is split into words the way
         `autoclass` splits one, so `MyToy` gives `my-toy` rather than `mytoy`.
         """
-        metadata = model.metadata.get(METADATA_MACRO, {})
-        given = _setting(metadata, "id", None)
+        given = setting(model.attributes, "id", None)
         if given:
             return given
         words = words_of(self.language_name(model))
@@ -147,10 +128,9 @@ class TextMateGenerator(Generator):
         """The grammar's own scope, which must be unique across installed grammars.
 
         `source.<id>` by convention for a programming language; a grammar
-        describing markup says `d Language > scope(text.<id>)` instead.
+        describing markup writes `> scope(text.<id>)` at its top instead.
         """
-        metadata = model.metadata.get(METADATA_MACRO, {})
-        return _setting(metadata, "scope", None) or f"source.{self.language_id(model)}"
+        return setting(model.attributes, "scope", None) or f"source.{self.language_id(model)}"
 
     def extensions(self, model: GrammarModel) -> list[str]:
         """The file extensions the language claims, as VS Code spells them.
@@ -158,8 +138,7 @@ class TextMateGenerator(Generator):
         `extensions(*.toy *.t)` reaches Kate as a glob and VS Code as `.toy`,
         `.t`, so the leading star is dropped and a bare name gains a dot.
         """
-        metadata = model.metadata.get(METADATA_MACRO, {})
-        declared = _values(metadata, "extensions") or [f".{self.language_id(model)}"]
+        declared = values(model.attributes, "extensions") or [f".{self.language_id(model)}"]
         return [f".{_file_type(extension)}" for extension in declared]
 
     # -- the grammar -------------------------------------------------------
@@ -204,16 +183,15 @@ class TextMateGenerator(Generator):
         Comment markers are not derived. A `Comment` production's leading
         literal looks like a line-comment marker and often is not — a block
         comment opens the same way — and toggling with the wrong marker damages
-        a file, so the grammar has to say `d Language > lineComment(#)`.
+        a file, so the grammar has to say `> lineComment(#)` at its top.
         """
-        metadata = model.metadata.get(METADATA_MACRO, {})
         configuration: dict = {}
 
         comments: dict = {}
-        line = _setting(metadata, "lineComment", None)
+        line = setting(model.attributes, "lineComment", None)
         if line:
             comments["lineComment"] = line
-        block = _values(metadata, "blockComment")
+        block = values(model.attributes, "blockComment")
         if block:
             if len(block) != 2:
                 raise GeneratorError(
@@ -237,7 +215,6 @@ class TextMateGenerator(Generator):
 
     def package(self, model: GrammarModel) -> dict:
         """The extension manifest tying the language to its grammar."""
-        metadata = model.metadata.get(METADATA_MACRO, {})
         name = self.language_name(model)
         identifier = self.language_id(model)
 
@@ -247,17 +224,17 @@ class TextMateGenerator(Generator):
             "extensions": self.extensions(model),
             "configuration": f"./{CONFIGURATION_FILE}",
         }
-        mimetypes = _values(metadata, "mimetype")
+        mimetypes = values(model.attributes, "mimetype")
         if mimetypes:
             language["mimetypes"] = mimetypes
 
         manifest: dict = {
             "name": identifier,
             "displayName": name,
-            "description": _setting(
-                metadata, "description", f"{name} language support."
+            "description": setting(
+                model.attributes, "description", f"{name} language support."
             ),
-            "version": _semantic_version(_setting(metadata, "version", None) or "0.0.1"),
+            "version": _semantic_version(setting(model.attributes, "version", None) or "0.0.1"),
             "engines": {"vscode": VSCODE_ENGINE},
             "categories": ["Programming Languages"],
             "contributes": {
@@ -272,7 +249,7 @@ class TextMateGenerator(Generator):
             },
         }
         for key in ("publisher", "license"):
-            value = _setting(metadata, key, None)
+            value = setting(model.attributes, key, None)
             if value:
                 manifest[key] = value
         return manifest

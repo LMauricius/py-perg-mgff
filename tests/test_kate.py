@@ -80,7 +80,7 @@ def test_the_output_is_well_formed_xml(toy):
     assert toy.tag == "language"
 
 
-def test_the_language_describes_itself_from_the_metadata_macro(toy):
+def test_the_language_describes_itself_from_the_file_attributes(toy):
     assert toy.get("name") == "Toy"
     assert toy.get("extensions") == "*.toy"
     assert toy.get("mimetype") == "text/x-toy"

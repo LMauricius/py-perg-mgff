@@ -3,10 +3,14 @@
 A line's role is fixed by its first item, and a marker has that role only as a
 complete first item of a line; elsewhere it is ordinary text.
 
-    (none)  blank, ignored              |   >   attributes of the current macro
+    (none)  blank, ignored              |   >   attributes
     #       comment, ignored            |   t   generation target
     d       macro definition            |   p   name prefix
     /       order-based alternative     |   |   length-based alternative
+
+A `>` line attaches to the macro above it. Written before any definition or
+nested scope it has no macro to attach to, and describes the enclosing scope
+instead — the file, the target or the prefix.
 
 The items of a body, of an attribute line and of a parameter slot are left as
 they were lexed. What an item *means* — a call, a subgroup, a character set — is
@@ -66,9 +70,10 @@ def parse(file: File, factory: ProduceCallFactory | None = None) -> Scope:
     reading a file's structure and no use for generating from it.
 
     Raises `SyntaxError_` on a line whose first item names no role, on an
-    alternative with no macro to attach to, on mixed `/` and `|` markers, and on
-    an alternative line following a `>` line. Raises `SemanticError` on a name
-    defined twice in one scope.
+    alternative with no macro to attach to, on mixed `/` and `|` markers, on an
+    alternative line following a `>` line, and on a scope's own attributes
+    written after its first definition. Raises `SemanticError` on a name defined
+    twice in one scope.
     """
     root = Scope(span=_covering_span(file.lines), name="", parent=None)
     _parse_lines(file.lines, root, factory or _no_factory)
@@ -99,10 +104,13 @@ def _parse_lines(
 
     The macro of the last `d` line stays current across comment lines, so the
     `/`, `|` and `>` lines that follow attach to it. `closed` records that a `>`
-    line has been seen: attributes end the alternatives.
+    line has been seen: attributes end the alternatives. `opened` records that
+    the scope has a body, after which a `>` line belongs to a macro or to
+    nothing: the scope's own attributes are written above everything else.
     """
     current: MacroSource | None = None
     closed = False
+    opened = False
     read: list[MacroSource] = []
 
     for line in lines:
@@ -124,6 +132,7 @@ def _parse_lines(
         if marker == "d":
             current = _parse_definition(line, scope)
             closed = bool(current.attribute_lists)
+            opened = True
             scope.reserve(current)
             read.append(current)
 
@@ -131,19 +140,25 @@ def _parse_lines(
         elif marker in CHOICE_MARKERS:
             _add_option(current, marker, closed, line)
 
-        # `>`: attributes, which end the alternatives.
+        # `>`: attributes of the macro above, which end its alternatives. With no
+        # macro above them they are the scope's own, and belong at its very top.
         elif marker == ">":
-            if current is None:
+            if current is not None:
+                current.attribute_lists.append(rest)
+                closed = True
+            elif opened:
                 raise SyntaxError_(
-                    "attributes with no macro to attach to", line.items[0].span
+                    "attributes with no macro to attach to; a scope's own "
+                    "attributes are written above its first definition",
+                    line.items[0].span,
                 )
-            current.attribute_lists.append(rest)
-            closed = True
+            else:
+                scope.attribute_list.extend(rest)
 
         # `t Name ( … )` and `p Prefix ( … )`: a nested scope.
         else:
             _parse_nested_scope(line, marker, scope, custom_produce_call_factory)
-            current, closed = None, False
+            current, closed, opened = None, False, True
 
     # The alternatives of a `d` line arrive one line at a time, so a definition
     # is built only once the whole scope has been read.

@@ -16,15 +16,15 @@
 # as an item still colours as a marker, and a `|` or `/` still colours as a
 # choice. Which line a marker really opens is what `Parse` says.
 
-d Language > name(MGFF) section(Sources) extensions(*.mgff)
-           > mimetype(text/x-mgff) license(MIT) lineComment(\x23)
-           > description(MGFF grammar support, generated from MGFF.)
-           # An editor extension is installed under a publisher and a version,
-           # whether or not it was ever published.
-           > publisher(pyperg) version(0.1.0)
-           # Kate does not count these as word boundaries by default, and a
-           # marker is a whole word. Saying so keeps every backend in step.
-           > additionalDeliminator(\x27`")
+> name(MGFF) section(Sources) extensions(*.mgff)
+> mimetype(text/x-mgff) license(MIT) lineComment(\x23)
+> description(MGFF grammar support, generated from MGFF.)
+# An editor extension is installed under a publisher and a version,
+# whether or not it was ever published.
+> publisher(pyperg) version(0.1.0)
+# Kate does not count these as word boundaries by default, and a
+# marker is a whole word. Saying so keeps every backend in step.
+> additionalDeliminator(\x27`")
 
 
 # -- the alphabet ----------------------------------------------------------
@@ -376,10 +376,13 @@ t Parse (
 
     # A line's role is fixed by its first item; a line with no items is blank.
     # Every role reads its own line break, so a scope is a run of whole lines.
+    # An attribute line with no definition above it describes the scope itself,
+    # which is why it is a line role here as well as part of a definition.
     d ScopeLine = Gap Definition
                 / Gap CommentLine
                 / Gap TargetLine
                 / Gap PrefixLine
+                / Gap AttrLine
                 / Gap NL
 
     d File = ScopeLines

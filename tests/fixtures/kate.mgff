@@ -1,7 +1,7 @@
 # A small language, written to exercise the Kate backend.
 
 # How the generated syntax definition describes itself.
-d Language > name(Toy) section(Sources) extensions(*.toy) mimetype(text/x-toy)
+> name(Toy) section(Sources) extensions(*.toy) mimetype(text/x-toy)
 
 # A named list of attributes, reused by the macros below.
 d Highlighted > autoclass

@@ -34,7 +34,7 @@ from ..grammar.macros import Macro, ProduceCall, Scoped
 from ..grammar.parser import parse
 from ..grammar.scope import MacroSource, Scope, TargetScope, signature_of
 from ..lexing.cst import File, Group, Item, group_items, render_item
-from .attributes import collect_attributes
+from .attributes import collect_attributes, collect_scope_attributes
 from .context import CallContext
 from ..common.rules import Choice, Rule, Reference, Sequence
 
@@ -82,6 +82,8 @@ class Target:
 
     name: str
     productions: dict[str, Production] = field(default_factory=dict)
+    #: The `>` lines at the target's top, describing the phase itself.
+    attributes: dict[str, list[str]] = field(default_factory=dict)
     #: Whether the target matches characters throughout, rather than only where
     #: a terminal is spelled as one. `Lex` does; `Parse` matches tokens.
     matches_characters: bool = False
@@ -97,8 +99,9 @@ class GrammarModel:
     #: own. A grammar generating one thing needs no phases at all, and a backend
     #: such as the regular-expression one reads only this.
     globals: Target = field(default_factory=lambda: Target(name=""))
-    #: File-scope attribute-only macros, by name, e.g. `Language` -> its attributes.
-    metadata: dict[str, dict[str, list[str]]] = field(default_factory=dict)
+    #: The `>` lines at the top of the file, describing the grammar itself. This
+    #: is where a backend reads settings such as the generated language's name.
+    attributes: dict[str, list[str]] = field(default_factory=dict)
 
     def target(self, name: str) -> Target | None:
         """One target by name, or None when the grammar has no such phase."""
@@ -133,21 +136,8 @@ def resolve(file: File, name: str, macros: list[Macro]) -> GrammarModel:
     # The file scope resolves on its own, and after the targets: its macros see
     # nothing but each other, since a scope is searched outwards only.
     model.globals = resolve_target(macros, "", grammar, [])
-    model.metadata = _resolve_metadata(grammar)
+    model.attributes = collect_scope_attributes(grammar)
     return model
-
-
-def _resolve_metadata(grammar: Scope) -> dict[str, dict[str, list[str]]]:
-    """The attribute-only macros defined outside every target.
-
-    These carry no rule and describe the grammar itself, which is where a
-    backend reads settings such as the generated language's name.
-    """
-    return {
-        source.name: collect_attributes(source)
-        for source in grammar.sources.values()
-        if source.matches_nothing
-    }
 
 
 def _target_name(source: MacroSource) -> str:
@@ -190,7 +180,11 @@ def resolve_target(
     The file scope is resolved through this too, under the empty name, which is
     what a grammar written without targets amounts to.
     """
-    target = Target(name=name, matches_characters=name in CHARACTER_TARGETS)
+    target = Target(
+        name=name,
+        attributes=collect_scope_attributes(scope_target),
+        matches_characters=name in CHARACTER_TARGETS,
+    )
     resolver = _Resolver(macros, target, earlier)
     # Seed with the macros written directly in the target; references then pull
     # in whatever else they reach, including macros shared outside it. A macro

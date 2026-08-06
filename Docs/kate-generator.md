@@ -283,10 +283,11 @@ as `Normal`, which is what makes it invisible.
 
 ### Describing the language
 
-A file-scope attribute-only macro named `Language` fills in the root element:
+The attributes at the top of the file — the `>` lines above its first definition
+— fill in the root element:
 
 ```mgff
-d Language > name(Toy) section(Sources) extensions(*.toy) mimetype(text/x-toy)
+> name(Toy) section(Sources) extensions(*.toy) mimetype(text/x-toy)
 ```
 
 | Attribute | Default |
@@ -474,6 +475,6 @@ pandoc --syntax-definition out/Toy.xml sample.md -o sample.html
   emitted longest fixed option first, which is exact for fixed-length options
   and an approximation otherwise.
 - **No case-insensitive matching.** MGFF has no spelling for it, so keywords are
-  case-sensitive unless `Language > casesensitive(0)` says otherwise.
+  case-sensitive unless the file says `> casesensitive(0)`.
 - **Nothing is skipped.** Kate colours every character, so `skip` has no
   meaning here.

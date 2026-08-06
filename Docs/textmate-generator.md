@@ -305,13 +305,13 @@ a line-comment marker and frequently is not — a block comment opens the same w
 — and toggling with the wrong marker damages a file. Say so instead:
 
 ```mgff
-d Language > lineComment(#) blockComment(#{ #})
+> lineComment(#) blockComment(#{ #})
 ```
 
 ### Describing the language
 
-A file-scope attribute-only macro named `Language` fills in the manifest. Most
-of it is shared with the Kate backend, so one grammar can describe itself once
+The attributes at the top of the file — the `>` lines above its first definition
+— fill in the manifest. Most of it is shared with the Kate backend, so one grammar can describe itself once
 and generate both.
 
 | Attribute | Default |

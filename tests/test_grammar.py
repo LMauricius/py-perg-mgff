@@ -97,6 +97,19 @@ def test_further_attribute_lines_add_to_an_option_less_macro():
     assert [item.text for item in macro.attributes] == ["token", "string"]
 
 
+def test_a_scope_carries_the_attribute_lines_at_its_top():
+    """A `>` line with no macro above it describes the scope itself."""
+    root = read("> name(Toy) section(Sources)\n> license(MIT)\nd x = a")
+    assert [item.text for item in root.attributes] == ["name", "section", "license"]
+
+
+def test_a_target_carries_its_own_attributes():
+    root = read("t Parse (\n > post(Lex) over(tokens)\n d x = a\n)")
+    target = root.targets["Parse"]
+    assert [item.text for item in target.attributes] == ["post", "over"]
+    assert not root.attributes
+
+
 def test_an_option_less_macro_takes_no_alternatives():
     with pytest.raises(SyntaxError_) as excinfo:
         read("d Common > token\n/ a")
@@ -163,7 +176,7 @@ def test_a_scope_knows_its_qualified_name():
     [
         ("x = a", "names no role"),
         ("/ a", "no macro to attach to"),
-        ("> token", "no macro to attach to"),
+        ("d x = a\nt Lex (\n)\n> token", "no macro to attach to"),
         ("d x = a\n/ b\n| c", "same marker"),
         ("d x = a\n> token\n/ b", "may not follow"),
         ("d x a", "needs `=` or `>` right after the head"),
