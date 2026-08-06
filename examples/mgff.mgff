@@ -263,6 +263,10 @@ t Lex (
 
 
 t Parse (
+    # This phase re-reads the text rather than the tokens: what it highlights is
+    # where a line's marker sits, not which tokens the line holds, so it carries
+    # no `over`.
+    > post(Lex)
 
     # -- layout ------------------------------------------------------------
 

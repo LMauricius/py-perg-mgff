@@ -16,23 +16,23 @@ t Lex (
     d AlNum  = Letter|Decimal_Number|_
 
     d Space = ( \_|\t )+
-        > style(Normal)
+        > class(Space) style(Normal) push(tokens)
 
     # Fixed words, which must not match inside a longer word.
     d Keyword = l e t
               | i f
               | e l s e
               | w h i l e
-        > style(Keyword)
+        > class(Keyword) style(Keyword) push(tokens)
 
     d Ident = Letter ( AlNum )*
-        > Classed style(Variable)
+        > Classed style(Variable) push(tokens)
 
     d Number = ( Digit )+ ( . ( Digit )+ )?
-        > class(Literal) style(Float)
+        > class(Number Literal) style(Float) push(tokens)
 
     d Comment = # ( Letter|Decimal_Number|\_|\t )*
-        > autoclass style(Comment)
+        > autoclass style(Comment) push(tokens)
 
     # length-based: the two-character operators win over the one-character ones
     d Op = < =
@@ -42,18 +42,19 @@ t Lex (
          | -
          | *
          | =
-        > style(Operator)
+        > class(Op) style(Operator) push(tokens)
 
     d LParen = \(
-        > style(Normal)
+        > class(\() style(Normal) push(tokens)
 
     d RParen = \)
-        > style(Normal)
+        > class(\)) style(Normal) push(tokens)
 
     d File = ( (Space)/(Comment)/(Keyword)/(Number)/(Ident)/(Op)/(LParen)/(RParen) )*
 )
 
 t Parse (
+    > post(Lex) over(tokens)
 
     # A highlighter colours every character, so `Parse` names every token it
     # wants coloured — the ones a parser would skip among them. A context holds

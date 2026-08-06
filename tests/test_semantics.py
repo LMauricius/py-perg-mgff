@@ -143,8 +143,6 @@ def test_a_choice_may_not_mix_its_separators():
 def test_the_example_grammar_resolves():
     model = model_of(read_fixture("calc.mgff"), "calc.mgff")
     assert [target.name for target in model.targets] == ["Lex", "Parse"]
-    assert model.target("Lex").matches_characters
-    assert not model.target("Parse").matches_characters
 
 
 def test_a_repetition_keeps_its_bounds():

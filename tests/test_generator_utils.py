@@ -6,9 +6,11 @@ from pyperg.mgff.lexing.lexer import lex_text
 from pyperg.mgff.common.characters import CHARACTER_SET
 from pyperg.mgff.common.charset import parse_character_set
 from pyperg.mgff.common.rules import Choice, MacroCall, Reference, Repetition, Sequence
-from pyperg.mgff.semantics.model import Production
+from pyperg.mgff.common.order import rule_tree_macros
+from pyperg.mgff.semantics.model import Production, resolve
 from pyperg.diagnostics.errors import GeneratorError
 from pyperg.generators.utils.classes import classes_of
+from pyperg.generators.utils.pipeline import resolve_over, stages_of
 from pyperg.generators.utils.emit import Emitter
 from pyperg.generators.utils.graph import (
     cycles,
@@ -20,7 +22,7 @@ from pyperg.generators.utils.graph import (
 from pyperg.generators.utils.naming import NameAllocator, pascal_case, safe_identifier, snake_case
 from pyperg.generators.utils.regex import alternation, character_class, regex_of
 from pyperg.generators.utils.styles import styles_of
-from pyperg.generators.utils.walk import fuse_literals, literal_of, nullable, references
+from pyperg.generators.utils.walk import fuse_literals, literal_of, nullable, references, rewrite
 from pyperg.generators.utils.xmlwrite import Element, escape_attribute
 
 
@@ -297,3 +299,112 @@ def test_a_style_outside_the_vocabulary_is_reported():
 
 def test_only_the_first_name_of_a_style_has_to_be_known():
     assert styles_of(labelled("If", style=["Keyword", "Mine"])) == ["Keyword", "Mine"]
+
+
+# -- the pipeline -----------------------------------------------------------
+
+#: Two phases: one that reads text and pushes what it matched, one that reads
+#: the list. `LParen` answers to the class `\(`, which is how `Parse` names it.
+TWO_PHASES = """
+t Lex (
+    d Digit = 0-9
+    d Number = ( Digit )+
+        > class(Number) style(Float) push(tokens)
+    d LParen = \\(
+        > class(\\() style(Normal) push(tokens)
+    d RParen = \\)
+        > class(\\)) style(Normal) push(tokens)
+    d File = ( (Number)/(LParen)/(RParen) )*
+)
+
+t Parse (
+    > post(Lex) over(tokens)
+    d Group = \\( Number \\)
+    d File = ( (Group)/(Number) )*
+)
+"""
+
+
+def staged(text: str):
+    """The phases of a grammar, with every `over` already resolved."""
+    model = resolve(lex_text(text, "<test>"), "<test>", rule_tree_macros())
+    stages = stages_of(model)
+    for stage in stages:
+        resolve_over(stage)
+    return model, stages
+
+
+def test_the_phases_come_out_in_the_order_post_puts_them_in():
+    _, stages = staged(TWO_PHASES)
+    assert [stage.target.name for stage in stages] == ["Lex", "Parse"]
+    assert stages[0].matches_characters and not stages[1].matches_characters
+    assert stages[1].previous is stages[0]
+
+
+def test_a_terminal_of_an_over_phase_becomes_a_call_on_the_match_it_names():
+    _, stages = staged(TWO_PHASES)
+    group = stages[1].target.productions["Group"]
+    # `\( Number \)` now calls the productions carrying those classes.
+    assert references(group.rule) == ["LParen", "Number", "RParen"]
+    # And they are in this phase's table, since it references them now.
+    assert "LParen" in stages[1].target.productions
+
+
+def test_a_production_reached_by_name_keeps_matching_its_own_characters():
+    """`Number` was pulled in by reference, not by class; its set stays a set."""
+    _, stages = staged(TWO_PHASES)
+    assert references(stages[1].target.productions["Number"].rule) == ["Digit"]
+
+
+def test_a_class_nothing_pushes_is_reported():
+    text = TWO_PHASES.replace("> class(\\() style(Normal) push(tokens)", "> style(Normal)")
+    with pytest.raises(GeneratorError, match="nothing pushed to 'tokens'"):
+        staged(text)
+
+
+def test_a_set_of_characters_means_nothing_over_a_list():
+    text = TWO_PHASES.replace("d Group = \\( Number \\)", "d Group = a-z")
+    with pytest.raises(GeneratorError, match="names nothing there"):
+        staged(text)
+
+
+def test_over_without_a_phase_before_it_is_reported():
+    text = "t Parse (\n > over(tokens)\n d File = 0-9\n)"
+    with pytest.raises(GeneratorError, match="runs first"):
+        staged(text)
+
+
+def test_a_phase_running_after_a_target_that_is_not_there_is_reported():
+    text = "t Parse (\n > post(Nowhere)\n d File = 0-9\n)"
+    with pytest.raises(GeneratorError, match="no target called 'Nowhere'"):
+        staged(text)
+
+
+def test_two_phases_running_after_the_same_one_are_reported():
+    text = (
+        "t Lex (\n d File = 0-9\n)\n"
+        "t Mid (\n > post(Lex)\n d File = 0-9\n)\n"
+        "t Parse (\n > post(Lex)\n d File = 0-9\n)"
+    )
+    with pytest.raises(GeneratorError, match="a chain, not a tree"):
+        staged(text)
+
+
+def test_a_cycle_leaves_the_chain_without_a_beginning():
+    text = (
+        "t Lex (\n > post(Parse)\n d File = 0-9\n)\n"
+        "t Parse (\n > post(Lex)\n d File = 0-9\n)"
+    )
+    with pytest.raises(GeneratorError, match="no beginning"):
+        staged(text)
+
+
+# -- rewriting rule trees ---------------------------------------------------
+
+
+def test_a_rewrite_replaces_a_node_without_walking_into_what_replaces_it():
+    tree = Sequence([Reference("a"), Repetition(Reference("b"), 0, None, "*")])
+    swapped = rewrite(tree, lambda node: Reference("c") if node == Reference("b") else None)
+    assert references(swapped) == ["a", "c"]
+    # The original is untouched: a rewrite builds a new tree.
+    assert references(tree) == ["a", "b"]

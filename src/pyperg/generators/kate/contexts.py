@@ -20,10 +20,10 @@ grammar's `Parse` target, and this module writes it down:
 `d` is a keyword where a line may open with one and ordinary text inside a
 subgroup, and a comment stays a comment across the lines its group spans.
 
-**`Lex` keeps two jobs**: the expression each token matches with, and the order
-tokens are tried in where a context holds several. A grammar with no `Parse`
-target is a machine of a single context, and is built straight from that order —
-which is what `Tokens` is.
+**The phases before the last keep two jobs**: the expression each of their
+matches recognises, and the order they are tried in where a context holds
+several. A grammar of a single phase is a machine of one context, built straight
+from that order — which is what `Tokens` is.
 
 A production reached as a plain call is spelled from the whole production rather
 than from one expression, so a choice of fixed words still becomes a hashed
@@ -44,9 +44,6 @@ stateDiagram-v2
 
 from __future__ import annotations
 
-import sys
-
-from ...diagnostics.errors import GeneratorError
 from ...mgff.common.rules import Reference
 from ...mgff.semantics.model import GrammarModel, Production, Target
 from ..utils.styles import styles_of
@@ -55,18 +52,15 @@ from ..utils.machine import POP
 from ..utils.machine import Context as MachineContext
 from ..utils.machine import ContextRule as MachineRule
 from ..utils.machine import MachineBuilder
+from ..utils.pipeline import productions_of, resolve_over, stages_of
 from ..utils.walk import literal_of
 from ..utils.xmlwrite import Element
 from .rules import RuleBuilder, RuleContext
 from .styles import FALLBACK_STYLE, style_for
 
-#: The one context a grammar of tokens alone amounts to. A grammar with a
-#: `Parse` target names its contexts after the productions they came from.
+#: The one context a grammar of a single phase amounts to. A grammar of more
+#: names its contexts after the productions they came from.
 TOKENS_CONTEXT = "Tokens"
-
-#: The targets the backend understands.
-LEX_TARGET = "Lex"
-PARSE_TARGET = "Parse"
 
 
 # -- styles ----------------------------------------------------------------
@@ -107,56 +101,50 @@ class ContextBuilder:
 
     def __init__(self, model: GrammarModel) -> None:
         self.model = model
-        self.lex = model.target(LEX_TARGET)
-        self.parse = model.target(PARSE_TARGET)
+        #: The phases, first to last. A terminal of a phase reading a list of
+        #: earlier matches is rewritten as a call on the match it names, which
+        #: has to happen before anything reads a rule tree.
+        self.stages = stages_of(model)
+        for stage in self.stages:
+            resolve_over(stage)
+        self.last = self.stages[-1]
+        #: The phase whose order decides which match wins where several could.
+        self.before = self.last.previous
+
         self.item_datas = ItemDatas()
         self.contexts: list[Element] = []
-        self.lex_rules = RuleBuilder(self.lex.productions if self.lex else {})
-        #: The rules of the machine's contexts, which reach across both targets.
-        self.machine_rules = RuleBuilder(
-            {**(self.lex.productions if self.lex else {}),
-             **(self.parse.productions if self.parse else {})}
+        #: The expressions of the phase before the last, which a grammar of a
+        #: single phase uses on its own.
+        self.before_rules = RuleBuilder(
+            (self.before or self.last).target.productions
         )
-        if self.lex is None and self.parse is None:
-            raise GeneratorError(
-                "the grammar has no `Lex` or `Parse` target; the Kate backend "
-                "generates from those two"
-            )
-        self._warn_about_other_targets()
-
-    def _warn_about_other_targets(self) -> None:
-        """Say which targets are being ignored, rather than dropping them silently."""
-        for target in self.model.targets:
-            if target.name not in (LEX_TARGET, PARSE_TARGET):
-                print(
-                    f"pyperg: kate: target {target.name!r} is not generated; "
-                    f"this backend reads {LEX_TARGET} and {PARSE_TARGET}.",
-                    file=sys.stderr,
-                )
+        #: The rules of the machine's contexts, which reach across every phase.
+        self.machine_rules = RuleBuilder(productions_of(self.stages))
 
     # -- the whole set -----------------------------------------------------
 
     def build(self) -> None:
         """Build every context, in the order Kate should read them.
 
-        The first context listed is the one a document starts in. A grammar with
-        a `Parse` target is spelled from the machine `utils.machine` derives, so
+        The first context listed is the one a document starts in. A grammar of
+        several phases is spelled from the machine `utils.machine` derives, so
         every context holds what its place in the grammar reaches and nothing
-        else. One with only tokens is a machine of a single context, and is
-        built straight from the `Lex` order.
+        else. A grammar of one phase is a machine of a single context, and is
+        built straight from that phase's order.
         """
-        if self.parse is not None:
+        if self.before is not None:
             self.build_machine()
-        elif self.lex is not None:
-            self.build_tokens_context(self.lex)
+        else:
+            self.build_tokens_context(self.last.target)
 
     # -- the machine -------------------------------------------------------
 
     def build_machine(self) -> None:
-        """Spell every context of the machine derived from `Parse`."""
-        assert self.parse is not None
-        order = token_order(self.lex) if self.lex is not None else []
-        machine = MachineBuilder(self.parse, order).build()
+        """Spell every context of the machine derived from the last phase."""
+        assert self.before is not None
+        machine = MachineBuilder(
+            self.last.target, token_order(self.before.target)
+        ).build()
         # The context a document starts in comes first, which is how Kate reads
         # a definition: the first context listed is the initial one.
         for name in [machine.start, *machine.contexts]:
@@ -216,7 +204,7 @@ class ContextBuilder:
 
     def elements(self) -> tuple[list[Element], list[Element], list[Element]]:
         """The contexts, the item data and the keyword lists."""
-        lists = self.lex_rules.list_elements() + self.machine_rules.list_elements()
+        lists = self.before_rules.list_elements() + self.machine_rules.list_elements()
         return self.contexts, self.item_datas.elements(), lists
 
     def context(self, name: str, **attributes: str | None) -> Element:
@@ -233,15 +221,15 @@ class ContextBuilder:
         self.contexts.append(element)
         return element
 
-    # -- Lex ---------------------------------------------------------------
+    # -- a grammar of one phase ---------------------------------------------
 
-    def build_tokens_context(self, lex: Target) -> None:
-        """One context holding a rule for every token `File` names."""
+    def build_tokens_context(self, target: Target) -> None:
+        """One context holding a rule for every match `File` names."""
         element = self.context(TOKENS_CONTEXT)
-        for name in token_order(lex):
-            production = lex.productions[name]
+        for name in token_order(target):
+            production = target.productions[name]
             where = RuleContext(attribute=self.item_datas.attribute_for(production))
-            element.children.extend(self.lex_rules.rules_for(production, where))
+            element.children.extend(self.before_rules.rules_for(production, where))
 
     # -- Parse -------------------------------------------------------------
 

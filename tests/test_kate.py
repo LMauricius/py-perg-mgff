@@ -50,6 +50,7 @@ t Lex (
 )
 
 t Parse (
+    > post(Lex)
     d Line = Marker Items NewLine
     d Items = ( (Name)/(Group)/(Space) )*
     d Space = ( \\_ )+
@@ -58,8 +59,8 @@ t Parse (
 )
 """
 
-LEX_ONLY = """
-t Lex (
+ONE_PHASE = """
+t Parse (
     d Digit = 0-9
     d Space = ( \\_|\\t )+
     d Int = ( Digit )+
@@ -154,7 +155,7 @@ def test_a_qualifier_joins_the_item_data_name_and_the_style_colours_it():
 
 
 def test_a_style_naming_none_of_the_vocabulary_is_rejected():
-    model = _model("t Lex (\n d Digit = 0-9\n > style(Mine)\n d File = ( Digit )*\n)")
+    model = _model("t Parse (\n d Digit = 0-9\n > style(Mine)\n d File = ( Digit )*\n)")
     with pytest.raises(GeneratorError, match="is no highlighting style"):
         KateGenerator().render(model)
 
@@ -204,23 +205,23 @@ def test_a_context_the_grammar_does_not_reach_holds_nothing_of_it():
     assert [rule.get("char") for rule in inner.findall("DetectChar")] == [")", "("]
 
 
-# -- a grammar with only a Lex target ---------------------------------------
+# -- a grammar of a single phase --------------------------------------------
 
 
-def test_a_lex_only_grammar_starts_at_its_tokens():
-    root = tree_of(LEX_ONLY)
+def test_a_grammar_of_one_phase_starts_at_its_matches():
+    root = tree_of(ONE_PHASE)
     contexts = root.find(".//contexts")
     assert [context.get("name") for context in contexts] == ["Tokens"]
 
 
 def test_only_the_productions_file_names_become_rules():
     # `Digit` is a helper: it is inlined into `Int`, never tried on its own.
-    tokens = context_named(tree_of(LEX_ONLY), "Tokens")
+    tokens = context_named(tree_of(ONE_PHASE), "Tokens")
     assert len(tokens) == 2
 
 
 def test_the_name_falls_back_to_the_grammar_file():
-    root = ElementTree.fromstring(render(LEX_ONLY, "my-toy.mgff"))
+    root = ElementTree.fromstring(render(ONE_PHASE, "my-toy.mgff"))
     assert root.get("name") == "MyToy"
     assert root.get("extensions") == "*.mytoy"
 
@@ -230,29 +231,30 @@ def test_the_name_falls_back_to_the_grammar_file():
 
 def test_a_target_without_a_file_macro_is_reported():
     with pytest.raises(GeneratorError, match="no `File` macro"):
-        render("t Lex (\n d Int = 0-9\n)")
+        render("t Parse (\n d Int = 0-9\n)")
 
 
 def test_a_file_macro_naming_no_productions_is_reported():
     with pytest.raises(GeneratorError, match="names no productions"):
-        render("t Lex (\n d File = 0-9\n)")
+        render("t Parse (\n d File = 0-9\n)")
 
 
-def test_a_grammar_with_neither_target_is_reported():
-    with pytest.raises(GeneratorError, match="no `Lex` or `Parse` target"):
+def test_a_chain_not_ending_at_parse_is_reported():
+    with pytest.raises(GeneratorError, match="it has to be 'Parse'"):
         render("t Other (\n d File = 0-9\n)")
 
 
 def test_a_recursive_token_cannot_be_matched():
-    text = "t Lex (\n d Nested = \\( Nested \\)\n d File = ( Nested )*\n)"
+    text = "t Parse (\n d Nested = \\( Nested \\)\n d File = ( Nested )*\n)"
     with pytest.raises(GeneratorError, match="reaches itself"):
         render(text)
 
 
-def test_an_ignored_target_is_reported_on_stderr(capsys):
-    text = LEX_ONLY + "\nt Other (\n d Thing = a\n)"
-    render(text)
-    assert "is not generated" in capsys.readouterr().err
+def test_a_target_off_the_chain_is_reported():
+    """A phase nothing runs after and that runs after nothing never runs."""
+    text = ONE_PHASE + "\nt Other (\n d Thing = a\n)"
+    with pytest.raises(GeneratorError, match="all run first"):
+        render(text)
 
 
 # -- writing ----------------------------------------------------------------

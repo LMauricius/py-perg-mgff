@@ -38,13 +38,6 @@ from .attributes import collect_attributes, collect_scope_attributes
 from .context import CallContext
 from ..common.rules import Choice, Rule, Reference, Sequence
 
-#: Targets known to match textual characters throughout, so a rule of theirs is
-#: never anything but characters. Other targets may still spell a terminal as a
-#: character — Appendix A's `Parse` writes `\( Expr \)` — so character sets are
-#: read everywhere; a name that resolves always outranks a single-part set, and
-#: a misspelling is still an unknown name rather than a silent character.
-CHARACTER_TARGETS: frozenset[str] = frozenset({"Lex"})
-
 #: How deep a mixfix macro may expand before it is called recursive.
 MAX_EXPANSION_DEPTH = 64
 
@@ -82,11 +75,10 @@ class Target:
 
     name: str
     productions: dict[str, Production] = field(default_factory=dict)
-    #: The `>` lines at the target's top, describing the phase itself.
+    #: The `>` lines at the target's top, describing the phase itself. What a
+    #: phase runs after, and what it runs over, is said here — MGFF names no
+    #: phase and no order, so it is the generator that reads them.
     attributes: dict[str, list[str]] = field(default_factory=dict)
-    #: Whether the target matches characters throughout, rather than only where
-    #: a terminal is spelled as one. `Lex` does; `Parse` matches tokens.
-    matches_characters: bool = False
 
 
 @dataclass(slots=True)
@@ -180,11 +172,7 @@ def resolve_target(
     The file scope is resolved through this too, under the empty name, which is
     what a grammar written without targets amounts to.
     """
-    target = Target(
-        name=name,
-        attributes=collect_scope_attributes(scope_target),
-        matches_characters=name in CHARACTER_TARGETS,
-    )
+    target = Target(name=name, attributes=collect_scope_attributes(scope_target))
     resolver = _Resolver(macros, target, earlier)
     # Seed with the macros written directly in the target; references then pull
     # in whatever else they reach, including macros shared outside it. A macro

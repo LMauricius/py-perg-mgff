@@ -31,8 +31,9 @@ or copy the folder into `~/.vscode/extensions/` to keep it. A project that only
 wants the grammar — to feed shiki, say — can take the one file and ignore the
 other two.
 
-The backend reads two targets, `Lex` and `Parse`, and both start at a macro
-named `File`.
+The backend reads the grammar's **chain of phases**, and every phase starts at a
+macro named `File`. The chain is what `post(…)` on each target says, and it ends
+at `Parse` — see *The phases it reads* below.
 
 ---
 
@@ -60,14 +61,50 @@ spell it:
 
 And so the same two conclusions hold:
 
-- **`Lex` maps exactly.** A token is a regular pattern, and a regular pattern is
-  precisely what a `match` matches.
-- **`Parse` maps closely.** Every entry holds what its place in the grammar
+- **The earlier phases map exactly.** A token is a regular pattern, and a
+  regular pattern is precisely what a `match` matches.
+- **The last phase maps closely.** Every entry holds what its place in the grammar
   reaches, so a marker is a keyword only where a line may open with one. What
   neither backend can do is reject: the output highlights and folds what your
   grammar describes, and colours malformed input all the same.
 
-## The `Lex` target
+## The phases it reads
+
+Every target names the phase it runs after, and the chain ends at `Parse`:
+
+```mgff
+t Lex (
+    ...
+)
+
+t Parse (
+    > post(Lex) over(tokens)
+    ...
+)
+```
+
+The first phase — the one with no `post` — reads the text. Each later one either
+reads the text again, or reads the list an earlier phase filled with `push(…)`,
+which is what `over(…)` says. A grammar of a single phase calls it `Parse`, and
+becomes one flat context of the matches its `File` names.
+
+What follows calls the first phase `Lex` and the last `Parse`, which is the usual
+arrangement; nothing but the last name is fixed.
+
+**What `over(…)` changes** is what a terminal of the later phase means. Where a
+phase reads text, `\(` is that character; where it reads a list, it is *the match
+whose class is `\(`*. So the earlier phase names what it produces —
+
+```mgff
+d LParen = \(
+        > class(\() style(Normal) push(tokens)
+```
+
+— and the later phase goes on writing `\( Expr \)`, meaning the token. A
+terminal naming a class nothing pushes is reported, which is what catches the
+class misspelled on either side.
+
+## The first phase
 
 `File` lists the tokens in the order they should be tried:
 
@@ -85,8 +122,8 @@ Mind the spelling of the choice: it carries no whitespace around its separator,
 since a space there would split it into separate items.
 
 **Each token becomes a repository entry of its own**, included wherever it may
-appear — `tokens` for a grammar of tokens alone, and every context that reaches
-it once there is a `Parse` target:
+appear — `tokens` for a grammar of a single phase, and every context that reaches
+it once there are several:
 
 ```json
 "tokens": {
@@ -110,7 +147,7 @@ inlined into the expression for `Int` and never tried on its own.
 A `Lex` production that reaches itself is an error, because a `match` is an
 expression and an expression cannot recurse. Nesting belongs to `Parse`.
 
-## The `Parse` target
+## The last phase
 
 `File` is the starting production, and from it the backend derives the machine:
 a set of contexts, where a context is *a place a line may begin* and holds the
@@ -168,9 +205,9 @@ d Skipped = Space
           / Comment
 ```
 
-A grammar with only a `Lex` target is a machine of one context: `tokens`, built
-straight from the order `File` names. A target that is neither `Lex` nor `Parse`
-is skipped, with a note on standard error.
+A grammar of a single phase is a machine of one context: `tokens`, built straight
+from the order `File` names. A target that is on no chain — one nothing runs
+after, and that runs after nothing — is reported: it would never run.
 
 ## Scope names
 
@@ -442,10 +479,11 @@ plus the settings only an editor extension needs. Generating from it gives:
 
 Reading it back against the grammar: the four keywords became one bounded
 alternation, the length-based operators put their two-character forms first,
-`class(Literal) style(Float)` scoped the number as a float while naming what it
-is, `autoclass` classed `Comment` by its own name, `style(Normal)` left `Space`
-and the parentheses unscoped, and the bracketing
-`Atom` production became a span that nests — and a bracket pair that folds.
+`class(Number Literal) style(Float)` scoped the number as a float while naming
+what it is, `autoclass` classed `Comment` by its own name, `style(Normal)` left
+`Space` and the parentheses unscoped, and the bracketing `Atom` production became
+a span that nests — and a bracket pair that folds. `Parse` is `over(tokens)`, so
+its `\( Expr \)` found `LParen` and `RParen` by the classes they carry.
 
 ---
 

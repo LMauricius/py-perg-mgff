@@ -54,6 +54,7 @@ from ..utils.machine import POP, STAY
 from ..utils.machine import Context as MachineContext
 from ..utils.machine import ContextRule as MachineRule
 from ..utils.machine import MachineBuilder
+from ..utils.pipeline import productions_of, resolve_over, stages_of
 from ..utils.naming import NameAllocator, safe_identifier, snake_case
 from ..utils.regex import regex_of
 from ..utils.walk import single_character
@@ -64,9 +65,6 @@ from .scopes import punctuation_scope, region_scope, scope_for
 GRAMMAR_ENTRY = "grammar"
 TOKENS_ENTRY = "tokens"
 
-#: The targets the backend understands.
-LEX_TARGET = "Lex"
-PARSE_TARGET = "Parse"
 
 #: How a line role says it is over: the first line that does not carry it on.
 #: Zero-width and anchored at the line's start, so the line is then read by
@@ -85,8 +83,18 @@ class RepositoryBuilder:
     def __init__(self, model: GrammarModel, language: str) -> None:
         self.model = model
         self.language = language
-        self.lex = model.target(LEX_TARGET)
-        self.parse = model.target(PARSE_TARGET)
+        #: The phases, first to last. A terminal of a phase reading a list of
+        #: earlier matches is rewritten as a call on the match it names, which
+        #: has to happen before anything reads a rule tree.
+        self.stages = stages_of(model)
+        for stage in self.stages:
+            resolve_over(stage)
+        self.last = self.stages[-1]
+        #: The phase whose order decides which match wins where several could.
+        self.before = self.last.previous
+        #: Every phase's productions in one table, for the expressions that
+        #: inline a name across a phase boundary.
+        self.merged = productions_of(self.stages)
         #: The repository, in the order the entries were built.
         self.entries: dict[str, Pattern] = {}
         #: What a document is matched against before anything has been pushed.
@@ -97,36 +105,19 @@ class RepositoryBuilder:
         #: Every context of the machine, and the entry each push was given.
         self.contexts: dict[str, MachineContext] = {}
         self.pushed: dict[str, str] = {}
-        if self.lex is None and self.parse is None:
-            raise GeneratorError(
-                "the grammar has no `Lex` or `Parse` target; the TextMate backend "
-                "generates from those two"
-            )
-        self._warn_about_other_targets()
-
-    def _warn_about_other_targets(self) -> None:
-        """Say which targets are being ignored, rather than dropping them silently."""
-        for target in self.model.targets:
-            if target.name not in (LEX_TARGET, PARSE_TARGET):
-                print(
-                    f"pyperg: textmate: target {target.name!r} is not generated; "
-                    f"this backend reads {LEX_TARGET} and {PARSE_TARGET}.",
-                    file=sys.stderr,
-                )
 
     # -- the whole grammar -------------------------------------------------
 
     def build(self) -> None:
         """Build every repository entry, and the patterns a document starts in.
 
-        A grammar with a `Parse` target is spelled from the machine; one with
-        only tokens is the flat list `Lex` names, in that order.
+        A grammar of several phases is spelled from the machine; one of a single
+        phase is the flat list its `File` names, in that order.
         """
-        if self.parse is not None:
+        if self.before is not None:
             self.build_machine()
         else:
-            assert self.lex is not None
-            self.build_tokens(self.lex)
+            self.build_tokens(self.last.target)
             self.top = [include(TOKENS_ENTRY)]
 
     def top_patterns(self) -> list[Pattern]:
@@ -145,15 +136,16 @@ class RepositoryBuilder:
 
     def build_machine(self) -> None:
         """Spell the machine: the starting context on top, a span per push."""
-        assert self.parse is not None
-        order = token_order(self.lex) if self.lex is not None else []
-        machine = MachineBuilder(self.parse, order).build()
+        assert self.before is not None
+        machine = MachineBuilder(
+            self.last.target, token_order(self.before.target)
+        ).build()
         self.contexts = machine.contexts
 
         start = machine.contexts.get(machine.start)
         if start is None:
             raise GeneratorError(
-                f"target {PARSE_TARGET!r} describes no structure to highlight"
+                f"target {self.last.target.name!r} describes no structure to highlight"
             )
         # `grammar` is filled in place, so it is written out ahead of the spans
         # it names, and a span reaching back to it finds it already there.
@@ -321,18 +313,18 @@ class RepositoryBuilder:
             return "^"  # nothing carries it on, so the next line ends it
         return CARRIES_ON.format("|".join(openings))
 
-    # -- Lex ---------------------------------------------------------------
+    # -- a grammar of one phase ---------------------------------------------
 
-    def build_tokens(self, lex: Target) -> None:
-        """One entry per token `File` names, and one including them in order.
+    def build_tokens(self, target: Target) -> None:
+        """One entry per match `File` names, and one including them in order.
 
-        This is what a grammar with no `Parse` target amounts to: a machine of
-        one context, whose rules are the tokens, tried in the order written.
+        This is what a grammar of a single phase amounts to: a machine of one
+        context, whose rules are the matches, tried in the order written.
         """
         includes: list[Pattern] = []
         self.entries[TOKENS_ENTRY] = {"patterns": includes}
-        for name in token_order(lex):
-            entry = self.entry_for_token(lex.productions[name])
+        for name in token_order(target):
+            entry = self.entry_for_token(target.productions[name])
             if entry is not None:
                 includes.append(include(entry))
 
@@ -343,7 +335,7 @@ class RepositoryBuilder:
         on standard error: a zero-width pattern never highlights anything, and
         leaving it in would only slow the tokeniser down.
         """
-        if matches_nothing(production, self.lex_lookup):
+        if matches_nothing(production, self.lookup):
             print(
                 f"pyperg: textmate: token {production.name!r} can match the empty "
                 "string, so it is left out; a zero-width pattern highlights nothing.",
@@ -352,19 +344,14 @@ class RepositoryBuilder:
             return None
         name = self.entry_name(production)
         scope = scope_for(styles_of(production), self.language)
-        self.entries[name] = match_pattern(production, scope, self.lex_lookup)
+        self.entries[name] = match_pattern(production, scope, self.lookup)
         return name
-
-    def lex_lookup(self, name: str) -> Production | None:
-        """A `Lex` production by name, for the expressions that inline it."""
-        return self.lex.productions.get(name) if self.lex is not None else None
 
     # -- matching ----------------------------------------------------------
 
     def lookup(self, name: str) -> Production | None:
-        """A production of either target, for the expressions that inline it."""
-        found = self.parse.productions.get(name) if self.parse is not None else None
-        return found if found is not None else self.lex_lookup(name)
+        """A production of any phase, for the expressions that inline it."""
+        return self.merged.get(name)
 
     def match_of(self, rule: MachineRule) -> Pattern | None:
         """One machine rule as a pattern: an entry to include, or a match.

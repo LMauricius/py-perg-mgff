@@ -255,6 +255,38 @@ generator rather than by MGFF, whether or not they take parameters.
 `t Name ( … )` groups the macros inside it into one generation phase,
 typically `Lex` for tokens and `Parse` for grammar.
 
+Which phase follows which is written on the phases themselves, as attributes of
+the target scope:
+
+| Attribute      | Meaning                                                          |
+| -------------- | ---------------------------------------------------------------- |
+| `post(Other)`  | This phase runs after `Other`.                                   |
+| `over(list)`   | This phase matches the list `list`, rather than the text itself. |
+
+```mgff
+t Lex (
+    d Number = ( 0-9 )+
+             > class(Number) push(tokens)
+    ...
+)
+
+t Parse (
+    > post(Lex) over(tokens)
+    ...
+)
+```
+
+The phase carrying no `post` runs first, and it always matches text: there is
+nothing before it to read. Every other phase names the one it runs after, so the
+phases are a chain rather than a set. Whether a generator requires a phase of a
+particular name, and which one it ends at, is the generator's affair.
+
+`over(list)` says what a **terminal** of the phase means. A phase matching text
+reads `\(` as that character; a phase matching a list reads it as *the match
+whose class is `\(`* — see *Where a match goes* and `class` in Part 3. A phase
+with a `post` but no `over` reads the text again, which is what a grammar wants
+when the later phase describes where things sit rather than what they are.
+
 `p Prefix ( … )` prepends the literal text `Prefix` to the name of every
 macro defined directly inside it. Any separator must be part of `Prefix`
 itself:
@@ -334,8 +366,8 @@ present throughout.
 
 ### Character matching macros
 
-Targets that match textual characters, such as the `Lex` target, add one item
-shape, a production name recognised by its pattern:
+Targets that match textual characters — every target with no `over`, and always
+the first — add one item shape, a production name recognised by its pattern:
 
 | Interpretation | Shape                                                                                                 | Meaning                                    |
 | -------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------ |
@@ -447,6 +479,9 @@ t Lex (
 d sep(R)by(S) = R (S R)*
 
 t Parse (
+    # `Lex` runs first and this runs after it; the terminals below are still
+    # characters, since nothing here says `over(…)`.
+    > post(Lex)
 
     # order-based: the first alternative that succeeds is the match
     d Expr = Term + Expr

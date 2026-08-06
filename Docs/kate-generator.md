@@ -10,8 +10,9 @@ skylighting when it highlights a fenced code block. One grammar gives one `.xml`
 file, ready to drop into `~/.local/share/org.kde.syntax-highlighting/syntax/` or
 to pass to `pandoc --syntax-definition`.
 
-The backend reads two targets, `Lex` and `Parse`, and both start at a macro
-named `File`.
+The backend reads the grammar's **chain of phases**, and every phase starts at a
+macro named `File`. The chain is what `post(…)` on each target says, and it ends
+at `Parse` — see *The phases it reads* below.
 
 ---
 
@@ -37,9 +38,9 @@ stateDiagram-v2
 That machine reads nesting, which is why brackets and comments fold correctly in
 Kate. What it cannot do is backtrack, or let a rule call itself. So:
 
-- **`Lex` maps exactly.** A token is a regular pattern, and a regular pattern is
-  precisely what a Kate rule matches.
-- **`Parse` maps closely.** Every context holds what its place in the grammar
+- **The earlier phases map exactly.** A token is a regular pattern, and a
+  regular pattern is precisely what a Kate rule matches.
+- **The last phase maps closely.** Every context holds what its place in the grammar
   reaches, so a marker is a keyword only where a line may open with one and a
   group holds only what its own lines may hold. What Kate still cannot do is
   reject: the output highlights and folds what your grammar describes, but a
@@ -48,7 +49,43 @@ Kate. What it cannot do is backtrack, or let a rule call itself. So:
 
 ---
 
-## The `Lex` target
+## The phases it reads
+
+Every target names the phase it runs after, and the chain ends at `Parse`:
+
+```mgff
+t Lex (
+    ...
+)
+
+t Parse (
+    > post(Lex) over(tokens)
+    ...
+)
+```
+
+The first phase — the one with no `post` — reads the text. Each later one either
+reads the text again, or reads the list an earlier phase filled with `push(…)`,
+which is what `over(…)` says. A grammar of a single phase calls it `Parse`, and
+becomes one flat context of the matches its `File` names.
+
+What follows calls the first phase `Lex` and the last `Parse`, which is the usual
+arrangement; nothing but the last name is fixed.
+
+**What `over(…)` changes** is what a terminal of the later phase means. Where a
+phase reads text, `\(` is that character; where it reads a list, it is *the match
+whose class is `\(`*. So the earlier phase names what it produces —
+
+```mgff
+d LParen = \(
+        > class(\() style(Normal) push(tokens)
+```
+
+— and the later phase goes on writing `\( Expr \)`, meaning the token. A
+terminal naming a class nothing pushes is reported, which is what catches the
+class misspelled on either side.
+
+## The first phase
 
 `File` is the starting production, and it lists the tokens in the order Kate
 should try them:
@@ -83,7 +120,7 @@ order-based choice (`/`) is emitted as written.
 A `Lex` production that reaches itself is an error: a Kate rule matches with an
 expression, and an expression cannot recurse.
 
-## The `Parse` target
+## The last phase
 
 `File` is the starting production here too, and from it the backend derives a
 **machine**: a set of contexts, where a context is *a place a line may begin*
@@ -140,9 +177,9 @@ d Skipped = Space
           / Comment
 ```
 
-A grammar with only a `Lex` target is a machine of one context, `Tokens`, built
-straight from that order. A target that is neither `Lex` nor `Parse` is skipped,
-with a note on standard error.
+A grammar of a single phase is a machine of one context, `Tokens`, built straight
+from that order. A target that is on no chain — one nothing runs after, and that
+runs after nothing — is reported: it would never run.
 
 ## Attributes
 
@@ -416,11 +453,12 @@ gives `out/Toy.xml`:
 ```
 
 Reading it back against the grammar: the four keywords became a hashed list, the
-length-based operators put their two-character forms first, `class(Literal)
-style(Float)` coloured the number as a float while naming what it is,
-`autoclass` classed `Comment` by its own name, and the
-bracketing `Atom` production became a context that folds — holding the tokens
-`Parse` names inside it, which is why `Skipped` is written at all.
+length-based operators put their two-character forms first, `class(Number
+Literal) style(Float)` coloured the number as a float while naming what it is,
+`autoclass` classed `Comment` by its own name, and the bracketing `Atom`
+production became a context that folds — holding the tokens `Parse` names inside
+it, which is why `Skipped` is written at all. `Parse` is `over(tokens)`, so its
+`\( Expr \)` found `LParen` and `RParen` by the classes they carry.
 
 ### Trying it out
 

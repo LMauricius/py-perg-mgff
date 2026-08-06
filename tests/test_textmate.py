@@ -44,8 +44,8 @@ def matched(pattern: str, text: str) -> str | None:
     return found.group(0) if found else None
 
 
-LEX_ONLY = """
-t Lex (
+ONE_PHASE = """
+t Parse (
     d Digit = 0-9
     d Space = ( \\_|\\t )+
     d Int = ( Digit )+
@@ -193,17 +193,17 @@ def test_a_non_bracketing_parse_production_contributes_nothing(toy):
     assert "expr" not in toy["repository"]
 
 
-# -- a grammar with only a Lex target ---------------------------------------
+# -- a grammar of a single phase --------------------------------------------
 
 
-def test_a_lex_only_grammar_starts_at_its_tokens():
-    grammar = grammar_of(LEX_ONLY)
+def test_a_grammar_of_one_phase_starts_at_its_matches():
+    grammar = grammar_of(ONE_PHASE)
     assert included(grammar) == ["tokens"]
     assert "grammar" not in grammar["repository"]
 
 
 def test_the_name_and_the_identifier_fall_back_to_the_grammar_file():
-    grammar = grammar_of(LEX_ONLY, "my-toy.mgff")
+    grammar = grammar_of(ONE_PHASE, "my-toy.mgff")
     assert grammar["name"] == "MyToy"
     # An identifier is read by people and compared verbatim, so the words of the
     # name are kept apart rather than run together.
@@ -241,7 +241,7 @@ def test_the_manifest_points_at_the_grammar_it_wrote(written):
 
 def test_a_version_written_for_kate_is_padded_out_for_the_manifest():
     # `version(1)` is what the Kate backend wants; a manifest needs three parts.
-    assert TextMateGenerator().package(_model("> version(1)\n" + LEX_ONLY))[
+    assert TextMateGenerator().package(_model("> version(1)\n" + ONE_PHASE))[
         "version"
     ] == "1.0.0"
 
@@ -268,7 +268,7 @@ def test_comment_markers_come_from_the_file_attributes(written):
 
 def test_a_grammar_saying_nothing_about_comments_configures_none():
     generator = TextMateGenerator()
-    model = _model(LEX_ONLY)
+    model = _model(ONE_PHASE)
     assert "comments" not in generator.language_configuration(model, generator.builder(model))
 
 
@@ -276,35 +276,36 @@ def test_a_grammar_saying_nothing_about_comments_configures_none():
 
 
 def test_a_recursive_token_cannot_be_matched():
-    text = "t Lex (\n d Nested = \\( Nested \\)\n d File = ( Nested )*\n)"
+    text = "t Parse (\n d Nested = \\( Nested \\)\n d File = ( Nested )*\n)"
     with pytest.raises(GeneratorError, match="reaches itself"):
         grammar_of(text)
 
 
-def test_a_grammar_with_neither_target_is_reported():
-    with pytest.raises(GeneratorError, match="no `Lex` or `Parse` target"):
+def test_a_chain_not_ending_at_parse_is_reported():
+    with pytest.raises(GeneratorError, match="it has to be 'Parse'"):
         grammar_of("t Other (\n d File = 0-9\n)")
 
 
 def test_a_target_without_a_file_macro_is_reported():
     with pytest.raises(GeneratorError, match="no `File` macro"):
-        grammar_of("t Lex (\n d Int = 0-9\n)")
+        grammar_of("t Parse (\n d Int = 0-9\n)")
 
 
 def test_a_block_comment_needs_both_markers():
     generator = TextMateGenerator()
-    model = _model("> blockComment(/*)\n" + LEX_ONLY)
+    model = _model("> blockComment(/*)\n" + ONE_PHASE)
     with pytest.raises(GeneratorError, match="opening and the closing marker"):
         generator.language_configuration(model, generator.builder(model))
 
 
 def test_a_token_matching_nothing_is_left_out_with_a_note(capsys):
-    text = "t Lex (\n d Digit = 0-9\n d Maybe = ( Digit )*\n d File = ( Maybe )*\n)"
+    text = "t Parse (\n d Digit = 0-9\n d Maybe = ( Digit )*\n d File = ( Maybe )*\n)"
     grammar = grammar_of(text)
     assert included(entry(grammar, "tokens")) == []
     assert "can match the empty string" in capsys.readouterr().err
 
 
-def test_an_ignored_target_is_reported_on_stderr(capsys):
-    grammar_of(LEX_ONLY + "\nt Other (\n d Thing = a\n)")
-    assert "is not generated" in capsys.readouterr().err
+def test_a_target_off_the_chain_is_reported():
+    """A phase nothing runs after and that runs after nothing never runs."""
+    with pytest.raises(GeneratorError, match="all run first"):
+        grammar_of(ONE_PHASE + "\nt Other (\n d Thing = a\n)")

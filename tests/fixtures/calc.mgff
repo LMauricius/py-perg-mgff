@@ -38,6 +38,8 @@ t Lex (
 d sep(R)by(S) = R (S R)*
 
 t Parse (
+    # `Lex` runs first; the terminals here are still characters.
+    > post(Lex)
 
     # order-based: the first alternative that succeeds is the match
     d Expr = Term + Expr

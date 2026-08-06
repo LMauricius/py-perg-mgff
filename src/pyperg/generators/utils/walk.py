@@ -45,6 +45,32 @@ def walk(node: Rule) -> Iterator[Rule]:
             yield from walk(argument)
 
 
+def rewrite(node: Rule, replace: Callable[[Rule], Rule | None]) -> Rule:
+    """A tree with every node `replace` answers for swapped for its answer.
+
+    `replace` is asked about a node before its children, and a node it answers
+    for is taken whole: what replaces a subtree is not walked into again. A
+    `MacroCall` is rebuilt around its arguments, since those are ordinary rules,
+    and the item it was written as is carried across untouched.
+    """
+    found = replace(node)
+    if found is not None:
+        return found
+    if isinstance(node, Sequence):
+        return Sequence([rewrite(item, replace) for item in node.items])
+    if isinstance(node, Repetition):
+        return Repetition(
+            rewrite(node.body, replace), node.minimum, node.maximum, node.marker
+        )
+    if isinstance(node, Choice):
+        return Choice([rewrite(option, replace) for option in node.options], node.symbol)
+    if isinstance(node, MacroCall) and node.arguments:
+        return MacroCall(
+            node.macro, node.item, [rewrite(one, replace) for one in node.arguments]
+        )
+    return node
+
+
 def references(node: Rule) -> list[str]:
     """The names a rule calls, in order, with repeats kept."""
     return [found.name for found in walk(node) if isinstance(found, Reference)]
