@@ -58,30 +58,37 @@ def test_the_example_grammar_generates_a_usable_expression():
 # -- capture groups ---------------------------------------------------------
 
 
-def test_a_named_group_keeps_its_name():
-    pattern = render("d Match = word:( ( a-z )+ )")
+def test_a_stored_production_becomes_a_named_group():
+    pattern = render("d Word = ( a-z )+\n > store(word)\nd Match = Word")
     assert pattern == "(?P<word>[a-z]+)"
     found = re.fullmatch(pattern, "abc")
     assert found is not None and found["word"] == "abc"
 
 
-def test_an_unnamed_group_captures_by_position():
-    pattern = render("d Match = :( ( a-z )+ ) 0-9")
-    assert pattern == "([a-z]+)[0-9]"
-    found = re.fullmatch(pattern, "abc1")
-    assert found is not None and found[1] == "abc"
+def test_a_production_storing_nothing_captures_nothing():
+    assert render("d Word = ( a-z )+\nd Match = Word 0-9") == "[a-z]+[0-9]"
 
 
-def test_a_name_used_twice_is_reported():
+def test_the_start_production_is_not_wrapped_in_its_own_field():
+    """Nothing calls `Match`, so there is no caller for it to store itself in."""
+    assert render("d Match = ( a-z )+\n > store(all)") == "[a-z]+"
+
+
+def test_a_stored_production_reached_twice_is_reported():
     # The production is written into the expression once per use, and no engine
     # allows a name to appear twice.
     with pytest.raises(GeneratorError, match="more than once"):
-        render("d Word = w:( a-z )\nd Match = Word Word")
+        render("d Word = a-z\n > store(w)\nd Match = Word Word")
 
 
 def test_a_name_no_engine_accepts_is_reported():
-    with pytest.raises(GeneratorError, match="no name for a capture group"):
-        render("d Match = 2go:( a-z )")
+    with pytest.raises(GeneratorError, match="no name for a field"):
+        render("d Word = a-z\n > store(2go)\nd Match = Word")
+
+
+def test_push_has_no_meaning_in_one_expression():
+    with pytest.raises(GeneratorError, match="no meaning in one expression"):
+        render("d Word = a-z\n > push(words)\nd Match = Word")
 
 
 # -- recursion --------------------------------------------------------------

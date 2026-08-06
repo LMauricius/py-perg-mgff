@@ -57,6 +57,14 @@ Render = Callable[[Rule, Mapping[str, str]], str]
 #: no pattern spells and which absorbs whatever is concatenated with it.
 Pattern = str | None
 
+#: Rewrites one finished pattern, given the production it belongs to.
+Wrap = Callable[[str, str], str]
+
+
+def _wrapped(wrap: Wrap, name: str, pattern: str, start: str) -> str:
+    """One finished pattern, as whoever asked for it wants to read it."""
+    return pattern if name == start else wrap(name, pattern)
+
 
 # -- pattern algebra --------------------------------------------------------
 
@@ -310,13 +318,21 @@ def _joined(coefficient: str, pattern: str, at_end: bool) -> str:
 
 
 def patterns_for(
-    productions: Mapping[str, Production], start: str, render: Render
+    productions: Mapping[str, Production],
+    start: str,
+    render: Render,
+    wrap: Wrap | None = None,
 ) -> dict[str, str]:
     """Every production the start reaches, as a pattern.
 
     Solved component by component, callees first, so a component is reached with
     every pattern it needs already in hand.
+
+    `wrap` gets a say over each finished pattern before anything reads it, which
+    is how a production that stores its match becomes a capture group everywhere
+    it is called. The start is left alone: nothing calls it.
     """
+    wrap = wrap or (lambda name, pattern: pattern)
     reachable = reachable_from(start, reference_graph(dict(productions)))
     table = {name: productions[name] for name in reachable}
     graph = reference_graph(table)
@@ -326,7 +342,7 @@ def patterns_for(
     for component in components_in_order(graph):
         if len(component) == 1 and component[0] not in graph[component[0]]:
             name = component[0]
-            patterns[name] = render(table[name].rule, patterns)
+            patterns[name] = _wrapped(wrap, name, render(table[name].rule, patterns), start)
             continue
         equations = read_component(component, table, patterns, render, culprits)
         if equations is None:
@@ -340,6 +356,6 @@ def patterns_for(
                     f"production {name!r} recurses without ever ending, "
                     "so it matches nothing at all"
                 )
-            patterns[name] = pattern
+            patterns[name] = _wrapped(wrap, name, pattern, start)
     culprits.raise_if_any()
     return patterns

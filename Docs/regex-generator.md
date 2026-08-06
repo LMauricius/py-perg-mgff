@@ -32,7 +32,12 @@ d Word   = ( a-z|A-Z|_ )+
 d Digits = 0-9 Digits
          / 0-9
 
-d Match = Space key:( Word ) Space = Space value:( Digits / Word ) Space
+d Key = Word
+      > store(key)
+d Val = Digits / Word
+      > store(value)
+
+d Match = Space Key Space = Space Val Space
 ```
 
 ```
@@ -41,24 +46,31 @@ d Match = Space key:( Word ) Space = Space value:( Digits / Word ) Space
 
 ## Capture groups
 
-A capture group is written as a name, a colon, and the rule it wraps:
+A capture group comes from `store`, written on the production whose match is
+being captured:
 
-| Written as        | Generated as    | Read back by             |
-| ----------------- | --------------- | ------------------------ |
-| `name:( rule )`   | `(?P<name>…)`   | the name                 |
-| `:( rule )`       | `(…)`           | its position             |
+```mgff
+d Key = Word
+      > store(key)
+```
 
-The name follows the usual rule for one: a letter or an underscore, then letters,
-digits or underscores.
+Every call of `Key` is then `(?P<key>[a-zA-Z_]+)`, and the match reads back by
+the name. The name follows the usual rule for one: a letter or an underscore,
+then letters, digits or underscores.
 
-A group belongs to the item it is written on, so a quantifier needs a group of
-its own around it — `( word:( a-z ) )+` repeats the capture, while `word:( a-z )+`
-is no capture at all and is reported as an unknown name.
+**The name belongs to the rule, not to the place it is used.** That is what makes
+a grammar readable — a production says once what it is and where it goes — and it
+has one consequence worth knowing: two places that want to capture the same rule
+under two names need two productions, as `Key` and `Val` above wrap the same
+`Word` and `Digits / Word`.
 
 A production is written into the expression once for every place that calls it,
-and no engine allows one name to appear twice. Calling a production that carries
-a named group from two places is therefore reported; leave the group unnamed, or
-give the second use a production of its own.
+and no engine allows one name to appear twice, so a production carrying `store`
+may only be reached once. `Match` itself is never wrapped: nothing calls it.
+
+`push(list)`, `store`'s counterpart for a field holding many matches, has no
+meaning here — one expression matches once and produces one result — and is
+reported.
 
 ## What can be generated, and what cannot
 

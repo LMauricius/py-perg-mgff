@@ -4,11 +4,14 @@ The grammar is read from the macro named `Match`, and the output is the pattern
 that matches it — the PCRE dialect `utils.regex` writes, which Python's `regex`
 module, PHP, Perl and Qt all read. See `Docs/regex-generator.md`.
 
-Two things set this backend apart from the others:
+Three things set this backend apart from the others:
 
 - **No targets.** A regular expression is one pass over the text, so there is
   nothing for `Lex` and `Parse` to be. The grammar is written at file scope, and
   a target is reported rather than quietly flattened.
+- **Capture groups come from `store`.** A production carrying `> store(name)`
+  becomes `(?P<name>…)` wherever it is called, so what is captured is a property
+  of the rule rather than of the place it was used.
 - **Only regular grammars.** MGFF describes far more than a regular expression
   can match. What can be rescued is rescued — a production that calls itself at
   the start or the end of an alternative is a repetition in disguise, and
@@ -19,16 +22,15 @@ Two things set this backend apart from the others:
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from pathlib import Path
 
 from ...diagnostics.errors import GeneratorError
-from ...mgff.common.rules import MacroCall, Rule
-from ...mgff.grammar.macros import MacroDefinition
+from ...mgff.common.rules import Rule
 from ...mgff.semantics.model import GrammarModel, Production
 from ..base import Generator
 from ..utils.regex import regex_of
-from .captures import CAPTURE, VALID_NAME, capture_name, is_capture
+from ..utils.streams import pushes_of, store_of
 from .linear import patterns_for
 
 #: The macro a grammar is read from.
@@ -55,8 +57,9 @@ class RegexGenerator(Generator):
     name = "regex"
     description = "write one regular expression, starting from the `Match` macro"
 
-    def extra_macros(self) -> list[MacroDefinition]:
-        return [CAPTURE]
+    def __init__(self) -> None:
+        #: The table `productions_of` settled, for `capture` to look a name up in.
+        self.productions: dict[str, Production] = {}
 
     def generate(self, model: GrammarModel, out_dir: Path) -> list[Path]:
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -69,7 +72,7 @@ class RegexGenerator(Generator):
     def render(self, model: GrammarModel) -> str:
         """The whole grammar as one pattern, without touching the file system."""
         productions = self.productions_of(model)
-        pattern = patterns_for(productions, START, self.render_rule)[START]
+        pattern = patterns_for(productions, START, self.render_rule, self.capture)[START]
 
         # A capture group inside a production reached twice is written twice, and
         # a name may only be used once in a pattern.
@@ -78,9 +81,9 @@ class RegexGenerator(Generator):
             listed = ", ".join(repr(name) for name in duplicates)
             raise GeneratorError(
                 f"the capture group {listed} would appear more than once in the "
-                "expression, which no engine allows; a group inside a production "
-                "that is used twice is written twice, so name it once or leave it "
-                "unnamed"
+                "expression, which no engine allows; a production carrying "
+                "`store` is written out wherever it is called, so a stored "
+                "production may only be reached once"
             )
         return pattern
 
@@ -94,6 +97,8 @@ class RegexGenerator(Generator):
                 "at file scope instead"
             )
         productions = model.globals.productions
+        # Kept for `capture`, which is asked about a production by name alone.
+        self.productions = productions
         if START not in productions:
             raise GeneratorError(
                 f"this grammar defines no macro named {START!r}, which is where "
@@ -103,32 +108,30 @@ class RegexGenerator(Generator):
 
     # -- one rule ----------------------------------------------------------
 
+    def capture(self, name: str, pattern: str) -> str:
+        """A stored production as the named group every call of it becomes.
+
+        `push` has no counterpart here: one expression matches once and produces
+        one result, so there is no list for a match to be appended to.
+        """
+        production = self.productions[name]
+        if pushes_of(production):
+            raise GeneratorError(
+                f"`push` on {name!r} has no meaning in one expression, which "
+                "matches once and produces one result; use `store` instead"
+            )
+        field = store_of(production)
+        return pattern if field is None else f"(?P<{field}>{pattern})"
+
     def render_rule(self, node: Rule, patterns: Mapping[str, str]) -> str:
         """One rule as a pattern, with the productions it calls already solved."""
-        pattern = regex_of(node, lookup=_nothing, emit=self.emit, patterns=patterns)
+        pattern = regex_of(node, lookup=_nothing, emit=None, patterns=patterns)
         if pattern is None:
             raise GeneratorError(
                 "this rule has no regular form: it calls something a regular "
                 "expression cannot express"
             )
         return pattern
-
-    def emit(self, node: MacroCall, inner: Callable[[Rule], str | None]) -> str | None:
-        """A capture group, which is the one macro this backend adds."""
-        if not is_capture(node):
-            return None
-        body = inner(node.arguments[0])
-        if body is None:
-            return None
-        name = capture_name(node)
-        if not name:
-            return f"({body})"
-        if not VALID_NAME.fullmatch(name):
-            raise GeneratorError(
-                f"{name!r} is no name for a capture group; a name is a letter or "
-                "an underscore followed by letters, digits or underscores"
-            )
-        return f"(?P<{name}>{body})"
 
 
 def _nothing(name: str) -> Production | None:

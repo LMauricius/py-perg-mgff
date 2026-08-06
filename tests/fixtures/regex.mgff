@@ -11,4 +11,12 @@ d Digits = 0-9 Digits
 d Value = Digits
         / Word
 
-d Match = Space key:( Word ) Space = Space value:( Value ) Space
+# The field a match ends up in belongs to the rule, not to the place it is used,
+# so the two sides of the line are productions of their own.
+d Key = Word
+      > store(key)
+
+d Val = Value
+      > store(value)
+
+d Match = Space Key Space = Space Val Space

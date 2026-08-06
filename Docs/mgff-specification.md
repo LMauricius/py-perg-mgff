@@ -366,6 +366,42 @@ so a production may still be named `x` or `Letter` and be called by that name.
 Character sets are therefore unlimited in number without reserving any names:
 each is an ordinary item of bare text, recognised by its shape alone.
 
+### Where a match goes
+
+A grammar that only recognises text needs neither of these. One that produces
+something — a parse tree, a list of tokens, a stream of anything — says where each
+match ends up, and says it on the match itself:
+
+| Attribute      | Meaning                                                        |
+| -------------- | -------------------------------------------------------------- |
+| `store(field)` | The match is assigned to `field` of whatever called it.        |
+| `push(list)`   | The match is appended to the list called `list`.               |
+
+```mgff
+d Expression = ...
+d Condition = Expression
+            > store(condition)
+d Block = ...
+        > store(block)
+
+d IfStatement = i f Condition : Block
+```
+
+`IfStatement` produces a structure with a `condition` and a `block`, without
+either name appearing where the rule is used. `store` and `push` are the same
+idea for a field holding one thing and a field holding many; storing the same
+field twice from one caller is an error, and pushing is how to say "again".
+
+A field or list name is a letter or an underscore followed by letters, digits or
+underscores. A production may `push` to several lists at once, which is how one
+match reaches a general stream and a channel of its own.
+
+Naming the field on the rule rather than at the call site means a production is
+written once and read the same way everywhere, and everything about a match — what
+it is, what it looks like, where it goes — sits in one attribute list. It also
+means a production used in two places writes the same field in both; where that
+is not what was meant, the two uses want two productions.
+
 ---
 
 ## Appendix A: A complete example
