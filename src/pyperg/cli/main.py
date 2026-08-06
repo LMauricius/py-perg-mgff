@@ -53,6 +53,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     except OSError as err:
         print(f"error: {err}", file=sys.stderr)
         return 1
+    except UnicodeDecodeError:
+        # An MGFF file is UTF-8 text; anything else is a file we were handed by
+        # mistake, and saying so beats a decoder's traceback.
+        where = getattr(args, "file", None) or "input"
+        print(f"error: {where}: not valid UTF-8", file=sys.stderr)
+        return 1
+    except RecursionError:
+        # The lexer bounds how deeply groups may nest, and the generators bound
+        # the states they build; this is the backstop for the walks that do not.
+        print(
+            "error: the grammar nests too deeply to be read",
+            file=sys.stderr,
+        )
+        return 1
 
 
 if __name__ == "__main__":

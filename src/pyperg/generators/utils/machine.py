@@ -37,6 +37,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from ...diagnostics.errors import GeneratorError
 from ...diagnostics.span import Position, Span
 from ...mgff.common.characters import CHARACTER, CHARACTER_SET
 from ...mgff.common.rules import Choice, MacroCall, Reference, Repetition, Rule, Sequence
@@ -58,6 +59,12 @@ INLINE = "inline"  # transparent: its parts belong to whoever reached it
 #: What `Context.line_end` may say besides the name of a context.
 STAY = "#stay"
 POP = "#pop"
+
+#: How long a chain of line contexts may grow before the rule that spells it is
+#: called endless. A role carrying on to a further line leaves a state behind,
+#: and a rule leaving *more* behind on every line — `d B = \n B a` — has no
+#: machine at all, since the states never repeat.
+MAX_LINE_STATES = 64
 
 
 # -- the model -------------------------------------------------------------
@@ -257,19 +264,25 @@ class Splitter:
             merged.finishes = merged.finishes or line.finishes
         return merged
 
-    def atomic(self, node: Rule) -> bool:
+    def atomic(self, node: Rule, seen: frozenset[str] = frozenset()) -> bool:
         """Whether a node is one rule's worth of matching.
 
         A subtree naming no span and no token of its own is matched by a single
         expression, which is both cheaper and more readable than one rule per
         character it could match.
+
+        A production already on the path reaches itself, and an expression does
+        not recurse, so the answer there is no — the same answer `is_regular`
+        gives, and what stops the walk on a recursive grammar.
         """
         for found in walk(node):
             if isinstance(found, Reference):
+                if found.name in seen:
+                    return False
                 production = self.classify.production(found.name)
                 if production is None or self.classify.of(production) != INLINE:
                     return False
-                if not self.atomic(production.rule):
+                if not self.atomic(production.rule, seen | {found.name}):
                     return False
         return True
 
@@ -310,11 +323,23 @@ Terminal = tuple[str, list[str]]
 
 
 class Classifier:
-    """Says what each production of a target is, and remembers the answer."""
+    """Says what each production of a target is, and remembers the answer.
+
+    The answers depend on each other — asking what a production is asks what the
+    productions it reaches are, itself among them — so they are settled together
+    rather than one at a time. Answering the first question classifies every
+    production, starting from "all transparent" and recomputing until nothing
+    changes. A classification read off a fixpoint is the same whichever
+    production was asked about first; one computed while another was still being
+    answered would not be.
+    """
 
     def __init__(self, target: Target) -> None:
         self.target = target
         self.answers: dict[str, str] = {}
+        #: True while the fixpoint is being computed, so the recomputation reads
+        #: the round's answers instead of starting a round of its own.
+        self.settling = False
 
     def production(self, name: str) -> Production | None:
         """One production of the target by name."""
@@ -322,13 +347,30 @@ class Classifier:
 
     def of(self, production: Production) -> str:
         """Whether a production is a span, a token or transparent."""
-        found = self.answers.get(production.name)
-        if found is None:
-            # Reserved before the walk, since asking what a span is may ask
-            # again about the productions it reaches, itself among them.
-            self.answers[production.name] = INLINE
-            self.answers[production.name] = found = self._classify(production)
-        return found
+        if production.name not in self.answers and not self.settling:
+            self._settle()
+        return self.answers.get(production.name, INLINE)
+
+    def _settle(self) -> None:
+        """Classify every production, iterating until the answers stop moving.
+
+        The rounds are bounded by the number of productions, which no chain of
+        answers depending on answers can outrun, and the last round is the one
+        that finds nothing left to change.
+        """
+        self.settling = True
+        try:
+            self.answers = {name: INLINE for name in self.target.productions}
+            for _ in range(len(self.target.productions) + 1):
+                found = {
+                    name: self._classify(production)
+                    for name, production in self.target.productions.items()
+                }
+                if found == self.answers:
+                    break
+                self.answers = found
+        finally:
+            self.settling = False
 
     def _classify(self, production: Production) -> str:
         if self.brackets_of(production) or self.line_openings_of(production):
@@ -514,6 +556,14 @@ class MachineBuilder:
         two never share a context however alike what they match — a grammar whose
         brackets hold exactly what the file holds would otherwise pop at the top.
         """
+        if depth > MAX_LINE_STATES:
+            raise GeneratorError(
+                f"the rule {_role_of(name)!r} leaves more behind after every line "
+                "break, so it never reaches a line it could end on. A highlighter "
+                "reads one line at a time, and a role that carries on has to carry "
+                "on into the same thing each time"
+            )
+
         parts, leftovers = self.reading(tails)
         # The styles and the way in belong to the key: an attribute line and an
         # alternative line may leave the same thing behind and still not be the
@@ -797,6 +847,17 @@ def _distinct(rules: list[ContextRule], lookup) -> list[ContextRule]:
             seen.add(key)
             out.append(rule)
     return out
+
+
+def _role_of(name: str) -> str:
+    """The production a chain of line contexts was named after.
+
+    Each further line of a role is named `…Line`, so the production is what is
+    left once those are taken off.
+    """
+    while name.endswith("Line"):
+        name = name[: -len("Line")]
+    return name or "File"
 
 
 def _state_key(tails: list[Rule]) -> str:

@@ -265,3 +265,48 @@ def test_generate_writes_one_file_named_after_the_language(tmp_path):
     written = KateGenerator().generate(model, tmp_path)
     assert written == [tmp_path / "Toy.xml"]
     assert written[0].read_text(encoding="utf-8").startswith("<?xml")
+
+
+# -- what a syntax definition can carry -------------------------------------
+
+
+def test_a_control_character_is_matched_by_an_expression():
+    """XML 1.0 carries no control character, so the literal rules decline one."""
+    text = (
+        "t Lex (\n"
+        "    d File = ( Nul )*\n"
+        "    d Nul = \\0\n"
+        "      > style(Keyword) class(N) push(t)\n"
+        ")\n"
+        "t Parse (\n"
+        "    > post(Lex) over(t)\n"
+        "    d File = ( Nul )*\n"
+        ")\n"
+    )
+    root = tree_of(text)  # parses, which is the whole point
+    assert root.find(".//RegExpr[@String='\\x{00}']") is not None
+    assert root.find(".//DetectChar") is None
+
+
+def test_a_token_matching_nothing_is_left_out(capsys):
+    """A zero-width rule colours nothing however often a context tries it."""
+    text = "t Parse (\n    d File = ( E )*\n    d E =\n      > style(Keyword)\n)\n"
+    root = tree_of(text)
+    assert root.find(".//RegExpr") is None
+    assert "can match the empty string" in capsys.readouterr().err
+
+
+def test_the_grammars_name_names_a_file_and_not_a_path(tmp_path):
+    """A grammar names itself, and that name may not leave the output directory."""
+    text = (
+        "> name(../../pwned)\n"
+        "t Parse (\n"
+        "    d File = ( A )*\n"
+        "    d A = a\n"
+        "      > style(Keyword)\n"
+        ")\n"
+    )
+    out = tmp_path / "out"
+    written = KateGenerator().generate(_model(text), out)
+    assert [path.parent for path in written] == [out]
+    assert not list(tmp_path.parent.glob("pwned*"))

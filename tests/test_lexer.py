@@ -88,3 +88,15 @@ def test_appendix_example_lexes():
 
 def test_render_round_trips_an_item():
     assert render_item(items("sep(Ident = Expr)by(,)")[0]) == "sep(Ident = Expr)by(,)"
+
+
+def test_nesting_has_a_limit():
+    """A file no one wrote by hand is reported, not left to exhaust the stack."""
+    with pytest.raises(LexError, match="nested more than"):
+        lex_text("d X = " + "(" * 400 + "a" + ")" * 400)
+
+
+def test_a_stray_carriage_return_says_so():
+    """A `\\r` outside a `\\r\\n` pair ends nothing, and the message says which."""
+    with pytest.raises(LexError, match="stray carriage return"):
+        lex_text("d A = a\rd B = b")

@@ -12,6 +12,7 @@ from pyperg.diagnostics.errors import GeneratorError
 from pyperg.generators.utils.classes import classes_of
 from pyperg.generators.utils.pipeline import resolve_over, stages_of
 from pyperg.generators.utils.emit import Emitter
+from pyperg.generators.utils.naming import safe_file_name
 from pyperg.generators.utils.graph import (
     cycles,
     reachable_from,
@@ -408,3 +409,21 @@ def test_a_rewrite_replaces_a_node_without_walking_into_what_replaces_it():
     assert references(swapped) == ["a", "c"]
     # The original is untouched: a rewrite builds a new tree.
     assert references(tree) == ["a", "b"]
+
+
+# -- names that reach the file system ---------------------------------------
+
+
+@pytest.mark.parametrize(
+    "name, expected",
+    [
+        ("../../pwned", "pwned"),
+        ("/etc/passwd", "etcpasswd"),
+        ("My.Toy-1", "My.Toy-1"),
+        ("..", "grammar"),
+        ("", "grammar"),
+    ],
+)
+def test_a_file_name_can_only_name_a_file(name, expected):
+    """A grammar names itself, and that name may not become a path."""
+    assert safe_file_name(name) == expected

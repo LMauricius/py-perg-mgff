@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from pyperg.diagnostics.errors import GeneratorError
 from pyperg.generators.kate import KateGenerator
 from pyperg.generators.utils.highlight import token_order
 from pyperg.generators.utils.machine import (
@@ -197,3 +198,62 @@ def test_the_fixtures_build_a_machine(path):
     text = (Path(__file__).parent / "fixtures" / path).read_text(encoding="utf-8")
     machine, _ = machine_of(text, path)
     assert machine.contexts
+
+
+# -- grammars the machine cannot spell --------------------------------------
+
+
+def test_a_recursive_token_does_not_send_the_walk_round_forever():
+    """A production reaching itself is not one expression's worth of matching."""
+    text = (
+        "t Lex (\n"
+        "    d File = ( A )*\n"
+        "    d A = a A / a\n"
+        "      > style(Keyword) class(A) push(t)\n"
+        ")\n"
+        "t Parse (\n"
+        "    > post(Lex) over(t)\n"
+        "    d File = ( A )*\n"
+        ")\n"
+    )
+    machine, _ = machine_of(text)
+    assert machine.contexts
+
+
+def test_a_rule_leaving_more_behind_after_every_line_is_reported():
+    """There is no machine for a role that never reaches a line it may end on."""
+    text = (
+        "t Lex (\n"
+        "    d File = ( A )*\n"
+        "    d A = a\n"
+        "      > style(Keyword) class(a) push(t)\n"
+        ")\n"
+        "t Parse (\n"
+        "    > post(Lex)\n"
+        "    d File = B\n"
+        "    d B = \\n B a\n"
+        ")\n"
+    )
+    with pytest.raises(GeneratorError, match="leaves more behind"):
+        machine_of(text)
+
+
+def test_a_production_is_classified_the_same_whoever_asks_first():
+    """Two mutually recursive line roles settle on one answer, not on an order."""
+    text = (
+        "t Parse (\n"
+        "    d File = ( X )*\n"
+        "    d X = a Y \\n\n"
+        "    d Y = b X / b\n"
+        ")\n"
+    )
+    model = resolve(lex_text(text, "<test>"), "<test>", KateGenerator().macros())
+    parse = model.target("Parse")
+    assert parse is not None
+
+    answers = []
+    for first in ("X", "Y"):
+        classify = Classifier(parse)
+        classify.of(parse.productions[first])
+        answers.append({n: classify.of(p) for n, p in parse.productions.items()})
+    assert answers[0] == answers[1]

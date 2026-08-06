@@ -45,3 +45,18 @@ def test_version():
     with pytest.raises(SystemExit) as excinfo:
         main(["--version"])
     assert excinfo.value.code == 0
+
+
+def test_a_file_that_is_not_utf_8_is_reported(tmp_path, capsys):
+    """An MGFF file is UTF-8 text; anything else is said so, not decoded."""
+    binary = tmp_path / "binary.mgff"
+    binary.write_bytes(b"d A = \xff\xfe\n")
+    assert main(["check", str(binary)]) == 1
+    assert "not valid UTF-8" in capsys.readouterr().err
+
+
+def test_a_deeply_nested_file_is_reported(tmp_path, capsys):
+    deep = tmp_path / "deep.mgff"
+    deep.write_text("d X = " + "(" * 400 + "a" + ")" * 400 + "\n", encoding="utf-8")
+    assert main(["check", str(deep)]) == 1
+    assert "error:" in capsys.readouterr().err

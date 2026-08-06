@@ -31,7 +31,7 @@ from pathlib import Path
 from ...diagnostics.errors import GeneratorError
 from ...mgff.semantics.model import GrammarModel
 from ..base import Generator
-from ..utils.naming import pascal_case, safe_identifier, words_of
+from ..utils.naming import pascal_case, safe_file_name, safe_identifier, words_of
 from ..utils.settings import setting, values
 from .repository import RepositoryBuilder
 
@@ -90,7 +90,7 @@ class TextMateGenerator(Generator):
         syntaxes = out_dir / SYNTAXES_DIR
         syntaxes.mkdir(parents=True, exist_ok=True)
 
-        grammar = syntaxes / f"{self.language_name(model)}.tmLanguage.json"
+        grammar = syntaxes / f"{self.grammar_stem(model)}.tmLanguage.json"
         configuration = out_dir / CONFIGURATION_FILE
         manifest = out_dir / MANIFEST_FILE
         _write_json(grammar, self.grammar(model, builder))
@@ -109,6 +109,15 @@ class TextMateGenerator(Generator):
         return setting(model.attributes, "name", None) or safe_identifier(
             pascal_case(Path(model.name).stem), fallback="Grammar"
         )
+
+    def grammar_stem(self, model: GrammarModel) -> str:
+        """What the grammar file is called, which is a name and not a path.
+
+        The grammar names itself, and that name reaches the file system here and
+        in the manifest that points at it, so it names a file inside the output
+        directory and nothing outside it.
+        """
+        return safe_file_name(self.language_name(model))
 
     def language_id(self, model: GrammarModel) -> str:
         """The identifier VS Code files the language under, and every scope ends in.
@@ -242,7 +251,7 @@ class TextMateGenerator(Generator):
                     {
                         "language": identifier,
                         "scopeName": self.scope_name(model),
-                        "path": f"./{SYNTAXES_DIR}/{name}.tmLanguage.json",
+                        "path": f"./{SYNTAXES_DIR}/{self.grammar_stem(model)}.tmLanguage.json",
                     }
                 ],
             },

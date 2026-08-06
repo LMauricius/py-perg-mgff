@@ -62,6 +62,22 @@ def safe_identifier(name: str, fallback: str = "Rule") -> str:
     return cleaned if not cleaned[0].isdigit() else f"{fallback}_{cleaned}"
 
 
+#: Characters a file name may hold. Everything else — a separator above all —
+#: is dropped, so a name can only ever name a file in the directory asked for.
+_UNSAFE_IN_FILE_NAME = re.compile(r"[^0-9A-Za-z._-]")
+
+
+def safe_file_name(name: str, fallback: str = "grammar") -> str:
+    """A name that can only be a file in the directory it is joined to.
+
+    A grammar names itself, and that name reaches an output path. Anything that
+    would leave the directory — a separator, `..`, an absolute path, a leading
+    dot — is not a name a file may bear here, so it falls back.
+    """
+    cleaned = _UNSAFE_IN_FILE_NAME.sub("", name).strip(".")
+    return cleaned or fallback
+
+
 def pascal_case(name: str) -> str:
     """`assign_list` and `assign-list` both give `AssignList`."""
     words = [word for word in re.split(r"[^0-9A-Za-z]+", name) if word]

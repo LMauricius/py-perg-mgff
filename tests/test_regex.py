@@ -154,3 +154,10 @@ def test_the_expression_is_written_as_one_file(tmp_path):
     written = backend.generate(model, tmp_path)
     assert [path.name for path in written] == ["regex.regex"]
     assert written[0].read_text(encoding="utf-8").strip() == backend.render(model)
+
+
+def test_an_empty_group_repeats_as_an_empty_group():
+    """A quantifier needs something to apply to, and `*` on its own is no pattern."""
+    pattern = render("d Match = ( )+\n")
+    assert pattern == "(?:)+"
+    assert re.fullmatch(pattern, "") is not None

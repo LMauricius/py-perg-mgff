@@ -243,7 +243,18 @@ class _Resolver:
         name = qualified[len(own) :] + source.signature
         if name not in self.target.productions:
             return name
-        return qualified + source.signature
+        # Qualifying is what tells two targets' macros of one name apart. It is
+        # a name like any other, so it is counted on until it is free: filing a
+        # production under a name already taken would lose the other one.
+        return self._free_name(qualified + source.signature)
+
+    def _free_name(self, wanted: str) -> str:
+        """A name this target has not filed a production under yet."""
+        name, counter = wanted, 2
+        while name in self.target.productions:
+            name = f"{wanted}{counter}"
+            counter += 1
+        return name
 
     # -- item to node ------------------------------------------------------
 

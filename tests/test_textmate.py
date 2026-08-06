@@ -309,3 +309,26 @@ def test_a_target_off_the_chain_is_reported():
     """A phase nothing runs after and that runs after nothing never runs."""
     with pytest.raises(GeneratorError, match="all run first"):
         grammar_of(ONE_PHASE + "\nt Other (\n d Thing = a\n)")
+
+
+def test_the_grammars_name_names_a_file_and_not_a_path(tmp_path):
+    """A grammar names itself, and the manifest points at the file that was written."""
+    text = (
+        "> name(../../pwned)\n"
+        "t Parse (\n"
+        "    d File = ( A )*\n"
+        "    d A = a\n"
+        "      > style(Keyword)\n"
+        ")\n"
+    )
+    out = tmp_path / "out"
+    backend = TextMateGenerator()
+    grammar, _, manifest = backend.generate(backend_model := _model(text), out)
+    assert grammar.parent == out / "syntaxes"
+    assert not list(tmp_path.parent.glob("pwned*"))
+
+    recorded = json.loads(manifest.read_text(encoding="utf-8"))
+    path = recorded["contributes"]["grammars"][0]["path"]
+    assert (out / path).resolve() == grammar.resolve()
+    # The name itself is untouched: it is what the language is called.
+    assert backend.language_name(backend_model) == "../../pwned"

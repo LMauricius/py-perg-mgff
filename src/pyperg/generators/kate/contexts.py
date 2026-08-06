@@ -44,6 +44,8 @@ stateDiagram-v2
 
 from __future__ import annotations
 
+import sys
+
 from ...mgff.common.rules import Reference
 from ...mgff.semantics.model import GrammarModel, Production, Target
 from ..utils.styles import styles_of
@@ -53,7 +55,7 @@ from ..utils.machine import Context as MachineContext
 from ..utils.machine import ContextRule as MachineRule
 from ..utils.machine import MachineBuilder
 from ..utils.pipeline import productions_of, resolve_over, stages_of
-from ..utils.walk import literal_of
+from ..utils.walk import literal_of, nullable
 from ..utils.xmlwrite import Element
 from .rules import RuleBuilder, RuleContext
 from .styles import FALLBACK_STYLE, style_for
@@ -224,10 +226,22 @@ class ContextBuilder:
     # -- a grammar of one phase ---------------------------------------------
 
     def build_tokens_context(self, target: Target) -> None:
-        """One context holding a rule for every match `File` names."""
+        """One context holding a rule for every match `File` names.
+
+        A match that could match nothing is left out, with a note: Kate tries
+        every rule of a context at each position, and one matching no characters
+        colours nothing however often it fires.
+        """
         element = self.context(TOKENS_CONTEXT)
         for name in token_order(target):
             production = target.productions[name]
+            if nullable(production.rule, self.before_rules.lookup):
+                print(
+                    f"pyperg: kate: token {production.name!r} can match the empty "
+                    "string, so it is left out; a zero-width rule highlights nothing.",
+                    file=sys.stderr,
+                )
+                continue
             where = RuleContext(attribute=self.item_datas.attribute_for(production))
             element.children.extend(self.before_rules.rules_for(production, where))
 

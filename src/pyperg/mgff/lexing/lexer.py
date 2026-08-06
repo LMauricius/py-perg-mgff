@@ -26,6 +26,12 @@ from .escapes import read_escape
 
 WS = " \t"
 
+#: How deeply groups may nest. A group is read by a recursive descent, and so is
+#: every walk over the tree it builds, so the limit keeps a file no one wrote by
+#: hand from exhausting the interpreter's stack. Nothing written to be read comes
+#: near it.
+MAX_GROUP_DEPTH = 64
+
 
 def lex(source: SourceFile) -> File:
     """Split a source file into lines, items and groups.
@@ -47,6 +53,8 @@ class _Lexer:
         self.source = source
         self.text = source.text
         self.pos = 0
+        #: How many groups are open at the cursor.
+        self.depth = 0
 
     # -- cursor helpers ----------------------------------------------------
 
@@ -110,7 +118,14 @@ class _Lexer:
                     )
                 return lines
 
-            # Unreachable: _line only stops at ")", NL or end of input.
+            # A line otherwise stops only at ")", NL or end of input, so what is
+            # left here is a carriage return outside a `\r\n` pair.
+            if self._peek() == "\r":
+                raise self._error(
+                    "stray carriage return; a line ends with \\n or \\r\\n",
+                    self.pos,
+                    self.pos + 1,
+                )
             raise self._error(
                 f"unexpected character {self._peek()!r}", self.pos, self.pos + 1
             )
@@ -158,8 +173,14 @@ class _Lexer:
     def _group(self) -> Group:
         """`group = "(" lines ")"`. The contents are lines of their own."""
         start = self.pos
+        if self.depth >= MAX_GROUP_DEPTH:
+            raise self._error(
+                f"groups nested more than {MAX_GROUP_DEPTH} deep", start, start + 1
+            )
         self.pos += 1  # the "("
+        self.depth += 1
         lines = self._lines(in_group=True, open_at=start)
+        self.depth -= 1
         self.pos += 1  # the ")"; _lines guarantees it is there
         return Group(self._span(start), lines)
 

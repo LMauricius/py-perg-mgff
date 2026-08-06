@@ -46,7 +46,7 @@ def collect_attributes(source: MacroSource) -> dict[str, list[str]]:
     attribute extends its argument list rather than replacing it.
     """
     collected: dict[str, list[str]] = {}
-    _collect_into(source.attributes, source.scope, collected, seen={source.signature})
+    _collect_into(source.attributes, source.scope, collected, seen={source})
     return collected
 
 
@@ -57,7 +57,8 @@ def collect_scope_attributes(scope: Scope) -> dict[str, list[str]]:
     written outside it and the file scope may reuse one of its own.
     """
     collected: dict[str, list[str]] = {}
-    _collect_into(scope.attributes, scope, collected, seen=set())
+    collected_from: set[MacroSource] = set()
+    _collect_into(scope.attributes, scope, collected, seen=collected_from)
     return collected
 
 
@@ -65,13 +66,15 @@ def _collect_into(
     attributes: list[Item],
     scope: Scope,
     collected: dict[str, list[str]],
-    seen: set[str],
+    seen: set[MacroSource],
 ) -> None:
     """Fold one list of attributes into the accumulator, following references.
 
-    `scope` is where a named list is looked up from. `seen` holds the signatures
+    `scope` is where a named list is looked up from. `seen` holds the macros
     already on the splice path, so a list that names itself is reported rather
-    than followed forever.
+    than followed forever. The macros themselves and not their names: a name is
+    unique only within one scope, and two lists of one name in two scopes are
+    two lists, either of which may name the other.
     """
     for item in attributes:
         name, arguments = parse_attribute(item)
@@ -79,7 +82,7 @@ def _collect_into(
         # reference to a named list, not an attribute of its own.
         referenced = scope.lookup_source(name) if not arguments else None
         if referenced is not None and referenced.matches_nothing:
-            if referenced.signature in seen:
+            if referenced in seen:
                 raise SemanticError(
                     f"attribute list {name!r} refers to itself", item.span
                 )
@@ -87,7 +90,7 @@ def _collect_into(
                 referenced.attributes,
                 referenced.scope,
                 collected,
-                seen | {referenced.signature},
+                seen | {referenced},
             )
             continue
         existing = collected.setdefault(name, [])

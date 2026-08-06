@@ -13,7 +13,7 @@ from pathlib import Path
 from ...mgff.semantics.model import GrammarModel
 from ..base import Generator
 from ..utils.emit import Emitter
-from ..utils.naming import pascal_case, safe_identifier
+from ..utils.naming import pascal_case, safe_file_name, safe_identifier
 from ..utils.settings import setting
 from ..utils.xmlwrite import Element
 from .contexts import ContextBuilder
@@ -32,7 +32,9 @@ class KateGenerator(Generator):
 
     def generate(self, model: GrammarModel, out_dir: Path) -> list[Path]:
         out_dir.mkdir(parents=True, exist_ok=True)
-        path = out_dir / f"{self.language_name(model)}.xml"
+        # The grammar names itself, and that name reaches a path: it names the
+        # file inside `out_dir` and nothing outside it.
+        path = out_dir / f"{safe_file_name(self.language_name(model))}.xml"
         path.write_text(self.render(model), encoding="utf-8")
         return [path]
 

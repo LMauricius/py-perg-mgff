@@ -202,3 +202,14 @@ def test_a_name_may_not_be_defined_twice():
 def test_a_prefix_may_not_collide_with_an_outer_name():
     with pytest.raises(SemanticError):
         read("d Util_x = a\np Util_ (\n    d x = b\n)")
+
+
+def test_a_target_inside_a_prefix_scope_is_rejected():
+    """A phase is a phase of the file; one nowhere near the top generates nothing."""
+    with pytest.raises(SyntaxError_, match="inside another scope"):
+        parse(lex_text("p Util_ (\n  t Lex (\n    d Int = 0-9\n  )\n)\n"))
+
+
+def test_a_target_inside_a_target_is_rejected():
+    with pytest.raises(SyntaxError_, match="inside another scope"):
+        parse(lex_text("t Outer (\n  d A = a\n  t Inner (\n    d B = b\n  )\n)\n"))

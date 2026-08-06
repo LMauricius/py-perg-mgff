@@ -287,6 +287,9 @@ whose class is `\(`* — see *Where a match goes* and `class` in Part 3. A phase
 with a `post` but no `over` reads the text again, which is what a grammar wants
 when the later phase describes where things sit rather than what they are.
 
+A target is a phase of the whole file and is written at its top level: a `t`
+line inside another target or inside a prefix scope is an error.
+
 `p Prefix ( … )` prepends the literal text `Prefix` to the name of every
 macro defined directly inside it. Any separator must be part of `Prefix`
 itself:

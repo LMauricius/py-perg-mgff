@@ -44,6 +44,28 @@ from ..utils.xmlwrite import Element
 WHITESPACE = set(" \t\n\r\f\v")
 
 
+def _is_xml_character(char: str) -> bool:
+    """Whether one character may appear in an XML 1.0 document at all."""
+    code = ord(char)
+    return (
+        char in "\t\n\r"
+        or 0x20 <= code <= 0xD7FF
+        or 0xE000 <= code <= 0xFFFD
+        or 0x10000 <= code <= 0x10FFFF
+    )
+
+
+def is_xml_text(text: str) -> bool:
+    """Whether a fixed string can be written into a syntax definition.
+
+    XML 1.0 carries tab, line feed and carriage return and nothing else below
+    U+0020 — not even as a character reference — so a literal holding a control
+    character cannot go into a rule's attribute at all. Such a match is left to
+    `RegExpr`, whose `\\x{00}` spelling is well-formed.
+    """
+    return all(_is_xml_character(char) for char in text)
+
+
 @dataclass(slots=True)
 class RuleContext:
     """What a rule does besides matching: its style and where it goes next."""
@@ -121,6 +143,8 @@ class RuleBuilder:
         words = [literal_of(alternative) for alternative in alternatives]
         if not all(word is not None and is_word(word) for word in words):
             return None
+        if not all(is_xml_text(word) for word in words if word is not None):
+            return None
         # Keyed by the production, so a list reached from several contexts is
         # written once and named the same everywhere.
         list_name = self.list_names.allocate(safe_identifier(name).lower(), key=name)
@@ -169,6 +193,10 @@ class RuleBuilder:
         literal = literal_of(node)
         if literal is None or not literal:
             return None
+        # A literal XML cannot carry is matched by an expression instead, which
+        # spells a control character as `\x{00}`.
+        if not is_xml_text(literal):
+            return None
         if len(literal) == 1:
             return where.applied_to("DetectChar", char=literal)
         if len(literal) == 2:
@@ -184,7 +212,10 @@ class RuleBuilder:
         parts = characters.parts
         if len(parts) < 2 or not all(part.kind == "character" for part in parts):
             return None
-        return where.applied_to("AnyChar", String="".join(part.value for part in parts))
+        listed = "".join(part.value for part in parts)
+        if not is_xml_text(listed):
+            return None
+        return where.applied_to("AnyChar", String=listed)
 
     # -- keyword lists -----------------------------------------------------
 

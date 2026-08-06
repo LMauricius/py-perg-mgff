@@ -258,3 +258,24 @@ def test_an_attribute_list_that_names_itself_is_reported():
     text = "d Loop > Loop\nt Lex (\n d Int = 0-9\n > Loop\n)"
     with pytest.raises(SemanticError, match="refers to itself"):
         model_of(text)
+
+
+def test_two_attribute_lists_of_one_name_are_two_lists():
+    """A splice path is a path through macros; a name is unique only in its scope."""
+    model = model_of(
+        "d A > x\n"
+        "d B > A\n"
+        "t T (\n"
+        "    d C = c\n"
+        "      > A\n"
+        "    d A > B\n"
+        ")\n"
+    )
+    target = model.target("T")
+    assert target is not None
+    assert "x" in target.productions["C"].attributes
+
+
+def test_an_attribute_list_naming_itself_is_still_reported():
+    with pytest.raises(SemanticError, match="refers to itself"):
+        model_of("d A = a\n  > list\nd list > list\n")

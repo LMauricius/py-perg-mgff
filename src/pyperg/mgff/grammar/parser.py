@@ -71,9 +71,9 @@ def parse(file: File, factory: ProduceCallFactory | None = None) -> Scope:
 
     Raises `SyntaxError_` on a line whose first item names no role, on an
     alternative with no macro to attach to, on mixed `/` and `|` markers, on an
-    alternative line following a `>` line, and on a scope's own attributes
-    written after its first definition. Raises `SemanticError` on a name defined
-    twice in one scope.
+    alternative line following a `>` line, on a target written inside another
+    scope, and on a scope's own attributes written after its first definition.
+    Raises `SemanticError` on a name defined twice in one scope.
     """
     root = Scope(span=_covering_span(file.lines), name="", parent=None)
     _parse_lines(file.lines, root, factory or _no_factory)
@@ -243,6 +243,16 @@ def _parse_nested_scope(
     span = Span.between(line.items[0].span, body.span)
 
     if marker == "t":
+        # A phase is a phase of the file. Where a nested one would sit in the
+        # chain of phases, and whether its macros are visible outside it, is
+        # nothing MGFF says — and a target nobody reads would generate nothing
+        # at all, silently.
+        if not _is_file_scope(parent):
+            raise SyntaxError_(
+                f"target {name!r} is written inside another scope; a target is "
+                "a phase of the whole file and is written at its top level",
+                line.items[0].span,
+            )
         target = TargetScope(span=span, name=name, parent=parent)
         _parse_lines(body.lines, target, factory)
         parent.add_target(target)
@@ -251,6 +261,11 @@ def _parse_nested_scope(
         _parse_lines(body.lines, scope, factory)
         parent.add_subscope(scope)
         parent.absorb(scope)
+
+
+def _is_file_scope(scope: Scope) -> bool:
+    """Whether a scope is the file itself, which is the one with no parent."""
+    return scope.parent is None
 
 
 def _scope_head(line: Line, marker: str) -> tuple[str, Group]:

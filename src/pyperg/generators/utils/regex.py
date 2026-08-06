@@ -280,7 +280,14 @@ def _fixed_length(pattern: str) -> int:
 
 
 def atom(pattern: str) -> str:
-    """A pattern wrapped so a quantifier applies to the whole of it."""
+    """A pattern wrapped so a quantifier applies to the whole of it.
+
+    The empty pattern is what an empty group gives, and a quantifier needs
+    something to apply to, so it becomes the empty group `(?:)` rather than a
+    bare `*` that no engine reads.
+    """
+    if not pattern:
+        return "(?:)"
     return pattern if _is_atomic(pattern) else f"(?:{pattern})"
 
 
@@ -295,6 +302,8 @@ def _grouped_for_sequence(pattern: str) -> str:
 
 def _is_atomic(pattern: str) -> bool:
     """Whether a quantifier may follow the pattern without brackets."""
+    if not pattern:
+        return False
     if len(pattern) == 1:
         return True
     if len(pattern) == 2 and pattern[0] == "\\":
