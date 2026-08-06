@@ -26,9 +26,9 @@ MGFF = Path(__file__).parent.parent / "examples" / "mgff.mgff"
 LINES = """
 t Lex (
     d Marker = d
-        > class(Keyword)
+        > style(Keyword)
     d Hash = #
-        > class(Comment)
+        > style(Comment)
     d Name = ( a-z|A-Z )+
     d Space = ( \\_ )+
     d NewLine = \\n
@@ -40,7 +40,7 @@ t Parse (
     d Group = \\( Items \\)
     d Definition = Marker Items NewLine
     d Comment = Hash Items NewLine
-        > class(Comment)
+        > style(Comment)
     d Line = (Definition)/(Comment)
     d File = ( (Line)/(NewLine) )*
 )
@@ -79,7 +79,7 @@ def test_a_production_that_runs_to_a_line_break_is_a_span():
     assert classify.of(parse.productions["Definition"]) == SPAN
 
 
-def test_a_classed_production_with_a_regular_form_is_a_token():
+def test_a_styled_production_with_a_regular_form_is_a_token():
     _, parse = machine_of(LINES)
     classify = Classifier(parse)
     assert classify.of(parse.productions["Marker"]) == TOKEN
@@ -98,7 +98,7 @@ def test_a_line_role_is_entered_by_its_marker_and_left_at_the_line_end():
     machine, _ = machine_of(LINES)
     start = context_of(machine, machine.start)
     opening = [rule for rule in start.rules if rule.push]
-    assert [rule.classes for rule in opening] == [["Keyword"], ["Comment"]]
+    assert [rule.styles for rule in opening] == [["Keyword"], ["Comment"]]
     assert context_of(machine, opening[0].push).line_end == POP
 
 
@@ -120,11 +120,11 @@ def test_a_group_holds_what_its_own_lines_hold_and_no_more():
     assert [rule.pop for rule in group.rules if rule.pop] == [1]
 
 
-def test_a_span_that_colours_its_contents_keeps_the_class_on_the_context():
+def test_a_span_that_colours_its_contents_keeps_the_style_on_the_context():
     machine, _ = machine_of(LINES)
     start = context_of(machine, machine.start)
     comment = context_of(machine, [r.push for r in start.rules if r.push][1])
-    assert comment.classes == ["Comment"]
+    assert comment.styles == ["Comment"]
 
 
 def test_a_marker_spelled_as_a_letter_matches_between_word_boundaries():
@@ -156,7 +156,7 @@ def test_a_role_reaching_past_its_line_carries_on_into_a_context_of_its_own():
 
     carried = context_of(machine, definition.line_end)
     openings = [rule for rule in carried.rules if rule.push]
-    assert {rule.classes[0] for rule in openings} == {"ControlFlow", "Comment", "Operator"}
+    assert {rule.styles[0] for rule in openings} == {"ControlFlow", "Comment", "Operator"}
     # The scope below knows none of them: `|` is an alternative only here.
     start = context_of(machine, machine.start)
     assert "\\|" not in patterns_of(start, parse.productions.get)

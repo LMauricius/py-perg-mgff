@@ -90,7 +90,7 @@ def regex_for(production: Production, lookup: Lookup) -> str:
 
 
 def match_pattern(production: Production, scope: str | None, lookup: Lookup) -> Pattern:
-    """A production as one `match` pattern, scoped by its classes.
+    """A production as one `match` pattern, scoped by its styles.
 
     An unscoped pattern is still emitted: it consumes the text it matched, which
     is what keeps a token from being read as something else.

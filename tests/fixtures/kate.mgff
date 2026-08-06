@@ -4,7 +4,7 @@
 > name(Toy) section(Sources) extensions(*.toy) mimetype(text/x-toy)
 
 # A named list of attributes, reused by the macros below.
-d Highlighted > autoclass
+d Classed > autoclass
 
 t Lex (
 
@@ -13,23 +13,23 @@ t Lex (
     d AlNum  = Letter|Decimal_Number|_
 
     d Space = ( \_|\t )+
-        > class(Normal)
+        > style(Normal)
 
     # Fixed words, which become a keyword list.
     d Keyword = l e t
               | i f
               | e l s e
               | w h i l e
-        > class(Keyword)
+        > style(Keyword)
 
     d Ident = Letter ( AlNum )*
-        > Highlighted
+        > Classed style(Variable)
 
     d Number = ( Digit )+ ( . ( Digit )+ )?
-        > class(Float Literal)
+        > class(Literal) style(Float)
 
     d Comment = # ( Letter|Decimal_Number|\_|\t )*
-        > autoclass
+        > autoclass style(Comment)
 
     # length-based: the two-character operators win over the one-character ones
     d Op = < =
@@ -39,13 +39,13 @@ t Lex (
          | -
          | *
          | =
-        > class(Operator)
+        > style(Operator)
 
     d LParen = \(
-        > class(Normal)
+        > style(Normal)
 
     d RParen = \)
-        > class(Normal)
+        > style(Normal)
 
     # The starting production: the file is a list of tokens, tried in order.
     # A choice carries no whitespace around its separator, or the space would

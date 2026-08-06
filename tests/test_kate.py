@@ -7,7 +7,7 @@ import pytest
 
 from pyperg.diagnostics.errors import GeneratorError
 from pyperg.generators.kate import KateGenerator
-from pyperg.generators.kate.styles import autoclass_for, style_for
+from pyperg.generators.kate.styles import style_for
 from pyperg.mgff.lexing.lexer import lex_text
 from pyperg.mgff.semantics.model import resolve
 
@@ -43,7 +43,7 @@ def rule_tags(context: ElementTree.Element) -> list[str]:
 MARKED_LINES = """
 t Lex (
     d Marker = d
-        > class(Keyword)
+        > style(Keyword)
     d Name = ( a-z|A-Z )+
     d NewLine = \\n
     d File = ( (Marker)/(Name) )*
@@ -128,55 +128,40 @@ def test_a_character_range_becomes_an_expression(toy):
     assert any("\\p{L}" in pattern for pattern in patterns)
 
 
-# -- classes ----------------------------------------------------------------
+# -- styles -----------------------------------------------------------------
 
 
-def test_an_explicit_class_reaches_kate_as_that_default_style(toy):
+def test_a_style_reaches_kate_as_that_default_style(toy):
     style = toy.find(".//itemData[@name='Keyword']")
     assert style is not None and style.get("defStyleNum") == "dsKeyword"
 
 
-def test_several_classes_join_the_name_and_the_first_known_one_styles_it(toy):
-    style = toy.find(".//itemData[@name='Float.Literal']")
-    assert style is not None and style.get("defStyleNum") == "dsFloat"
-
-
-def test_autoclass_derives_the_style_from_the_macro_name(toy):
-    # `Comment` names a default style outright; `Ident` reaches `Variable`
-    # through the synonym table, and does so via a named attribute list.
-    assert toy.find(".//itemData[@name='Comment']").get("defStyleNum") == "dsComment"
+def test_a_style_reached_through_a_named_attribute_list(toy):
+    # `Ident` carries `Classed` for its class and names its own style.
     assert toy.find(".//itemData[@name='Variable']").get("defStyleNum") == "dsVariable"
+    assert toy.find(".//itemData[@name='Comment']").get("defStyleNum") == "dsComment"
 
 
-@pytest.mark.parametrize(
-    "macro, style",
-    [
-        ("Keyword", "Keyword"),
-        ("comment", "Comment"),
-        ("Ident", "Variable"),
-        ("Number", "DecVal"),
-        ("HexNumber", "DecVal"),
-        ("Hex", "BaseN"),
-        ("LineComment", "Comment"),
-        ("Space", "Normal"),
-    ],
-)
-def test_autoclass_derivation(macro, style):
-    assert autoclass_for(macro, warn=False) == style
+def test_a_class_does_not_reach_the_item_data_name(toy):
+    """`class(Literal) style(Float)` colours as a float and is called one."""
+    assert toy.find(".//itemData[@name='Float.Literal']") is None
+    assert toy.find(".//itemData[@name='Float']").get("defStyleNum") == "dsFloat"
 
 
-def test_an_unrecognised_name_falls_back_to_normal_with_a_warning(capsys):
-    assert autoclass_for("Wibble", warn=True) == "Normal"
-    assert "no class matches" in capsys.readouterr().err
+def test_a_qualifier_joins_the_item_data_name_and_the_style_colours_it():
+    name, default_style = style_for(["Keyword", "Control"])
+    assert (name, default_style) == ("Keyword.Control", "dsKeyword")
 
 
-def test_an_unknown_class_survives_in_the_item_data_name():
-    name, default_style = style_for(["Keyword", "Mine"])
-    assert (name, default_style) == ("Keyword.Mine", "dsKeyword")
+def test_a_style_naming_none_of_the_vocabulary_is_rejected():
+    model = _model("t Lex (\n d Digit = 0-9\n > style(Mine)\n d File = ( Digit )*\n)")
+    with pytest.raises(GeneratorError, match="is no highlighting style"):
+        KateGenerator().render(model)
 
 
-def test_a_class_naming_no_style_at_all_is_still_normal():
-    assert style_for(["Mine"]) == ("Mine", "dsNormal")
+def test_a_production_naming_no_style_is_left_unstyled(toy):
+    """Nothing derives a style, so an unstyled match is coloured by its context."""
+    assert toy.find(".//itemData[@name='Ident']") is None
 
 
 # -- the Parse target -------------------------------------------------------
@@ -261,12 +246,6 @@ def test_a_grammar_with_neither_target_is_reported():
 def test_a_recursive_token_cannot_be_matched():
     text = "t Lex (\n d Nested = \\( Nested \\)\n d File = ( Nested )*\n)"
     with pytest.raises(GeneratorError, match="reaches itself"):
-        render(text)
-
-
-def test_an_empty_class_is_reported():
-    text = "t Lex (\n d Int = 0-9\n > class\n d File = ( Int )*\n)"
-    with pytest.raises(GeneratorError, match="needs at least one class"):
         render(text)
 
 

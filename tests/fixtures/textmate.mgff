@@ -7,7 +7,7 @@
 > description(Toy language support, generated from MGFF.)
 
 # A named list of attributes, reused by the macros below.
-d Highlighted > autoclass
+d Classed > autoclass
 
 t Lex (
 
@@ -16,23 +16,23 @@ t Lex (
     d AlNum  = Letter|Decimal_Number|_
 
     d Space = ( \_|\t )+
-        > class(Normal)
+        > style(Normal)
 
     # Fixed words, which must not match inside a longer word.
     d Keyword = l e t
               | i f
               | e l s e
               | w h i l e
-        > class(Keyword)
+        > style(Keyword)
 
     d Ident = Letter ( AlNum )*
-        > Highlighted
+        > Classed style(Variable)
 
     d Number = ( Digit )+ ( . ( Digit )+ )?
-        > class(Float Literal)
+        > class(Literal) style(Float)
 
     d Comment = # ( Letter|Decimal_Number|\_|\t )*
-        > autoclass
+        > autoclass style(Comment)
 
     # length-based: the two-character operators win over the one-character ones
     d Op = < =
@@ -42,13 +42,13 @@ t Lex (
          | -
          | *
          | =
-        > class(Operator)
+        > style(Operator)
 
     d LParen = \(
-        > class(Normal)
+        > style(Normal)
 
     d RParen = \)
-        > class(Normal)
+        > style(Normal)
 
     d File = ( (Space)/(Comment)/(Keyword)/(Number)/(Ident)/(Op)/(LParen)/(RParen) )*
 )

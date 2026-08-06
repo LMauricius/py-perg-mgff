@@ -57,7 +57,7 @@ should try them:
 t Lex (
     d Digit = 0-9
     d Int   = ( Digit )+
-            > class(DecVal)
+            > style(DecVal)
 
     d File = ( (Space)/(Comment)/(Keyword)/(Int)/(Ident) )*
 )
@@ -100,14 +100,14 @@ A production becomes one of three things:
 | --- | --- | --- |
 | Span | opens with a fixed character and closes with one | a context, pushed by the opening and popped by the closing, and a region that folds |
 | Span | opens with a fixed character and runs to a line break | a context, pushed by the opening and popped where the line ends |
-| Token | carries a `class` and has a regular form | one rule, coloured by its classes |
+| Token | carries a `style` and has a regular form | one rule, coloured by its style |
 | Transparent | anything else | nothing of its own; its parts belong to whoever reached it |
 
 ```mgff
 t Parse (
     d Definition = DefMarker WS Head Gap EqualsMarker Items NL
     d Comment    = CommentMarker Items NL
-                 > class(Comment)
+                 > style(Comment)
     d Group      = \( Items \)
     d Line       = (Definition)/(Comment)
     d File       = ( (Line)/(NL) )*
@@ -146,18 +146,18 @@ with a note on standard error.
 
 ## Attributes
 
-### `class(Class1 Class2 …)`
+### `style(Style Qualifier …)`
 
 Kate gives every rule an *itemData*, and every itemData a **default style** —
 `dsKeyword`, `dsComment`, `dsString` and so on. A theme colours the default
 styles, and skylighting maps them onto pandoc's token types. The default style
-is therefore the whole of what a highlighted token *means*, and `class` is how
-you choose one:
+is therefore the whole of what a highlighted match *looks like*, and `style` is
+how you choose one:
 
 ```mgff
 d Keyword = i f
           | e l s e
-        > class(Keyword)
+        > style(Keyword)
 ```
 
 gives
@@ -168,8 +168,8 @@ gives
 <itemData name="Keyword" defStyleNum="dsKeyword"/>
 ```
 
-A class is passed through as it is written, so anything in this list reaches
-Kate as that exact style:
+The first argument must name one of these, and the match ignores capitalisation,
+so `style(keyword)` and `style(Keyword)` are the same thing:
 
 | | | | |
 | --- | --- | --- | --- |
@@ -182,81 +182,60 @@ Kate as that exact style:
 | `CommentVar` | `RegionMarker` | `Information` | `Warning` |
 | `Alert` | `Error` | `Others` | |
 
-The match ignores capitalisation, so `class(keyword)` and `class(Keyword)` are
-the same thing.
+Anything else is an error, naming the list: a misspelled style would otherwise be
+silently invisible.
 
-**Several classes.** Kate allows one style per rule, so when you give several,
-the first one naming a default style decides the colour and all of them are
-joined with `.` to name the itemData:
+**Nothing is derived.** A production carrying no `style` is unstyled, and takes
+the colour of whatever context it was reached from. That is exactly right for
+whitespace and punctuation, and it means a token you *want* coloured always says
+so.
+
+**Qualifiers.** Kate allows one style per rule, so any further arguments are
+qualifiers: they do not change the colour, and all the names are joined with `.`
+to name the itemData.
 
 ```mgff
-d Number = ( Digit )+ ( . ( Digit )+ )?
-        > class(Float Literal)
+d If = i f
+    > style(Keyword Control)
 ```
 
 ```xml
-<itemData name="Float.Literal" defStyleNum="dsFloat"/>
+<itemData name="Keyword.Control" defStyleNum="dsKeyword"/>
 ```
 
-Nothing is rejected. A class naming no default style is kept in the itemData
-name and nothing more, which is enough for a Kate theme to target it by name; if
-*no* class names a style, the token is `dsNormal`. This is how you keep a
-distinction the default styles do not make — `class(Keyword Control)` and
-`class(Keyword Modifier)` are both keywords to a theme that does not care, and
-two different things to one that does.
+That is how you keep a distinction the default styles do not make —
+`style(Keyword Control)` and `style(Keyword Modifier)` are both keywords to a
+theme that does not care, and two different things to one that does.
 
-### `autoclass`
+### `class(Class1 Class2 …)` and `autoclass`
 
-`autoclass` asks for the class to be derived from the macro's own name, which is
-usually enough:
+A **class** is what a match *is*, not what it looks like. It carries no colour;
+it is the name a later phase matches on when it reads a list of matches rather
+than text — see *Targets* below.
 
 ```mgff
-d Comment = # ( Anything )*
-        > autoclass
+d LParen = \(
+        > class(\() style(Normal)
 ```
 
-The name is tried four ways, in order, and the first that answers wins:
+Classes are free text and are never rewritten. A match may carry several, which
+is how one token answers to more than one name:
 
-1. **The name is a default style.** `Comment`, `Keyword`, `String` — matched
-   ignoring capitalisation.
-2. **The name is a known synonym.** The table below.
-3. **A word of the name is one of the above.** The name is split at separators
-   and at case changes, and the **last** matching word wins, because the last
-   word says what the token is and the ones before it only qualify it. So
-   `LineComment` is a `Comment` and `HexNumber` is whatever `Number` is.
-4. **Nothing matched.** The token is `Normal`, and a line goes to standard error
-   naming the macro, so you know to write an explicit `class` for it.
+```mgff
+d Number = ( Digit )+ ( . ( Digit )+ )?
+        > class(Float Number Literal) style(Constant)
+```
 
-The synonyms:
+`autoclass` is shorthand for the common case where the macro's own name already
+says what the match is, and gives exactly that name:
 
-| Style | Names |
-| --- | --- |
-| `Variable` | `ident`, `identifier`, `name`, `symbol`, `var` |
-| `DecVal` | `number`, `num`, `int`, `integer`, `digit`, `digits` |
-| `Float` | `real`, `double` |
-| `BaseN` | `hex`, `oct`, `octal`, `bin`, `binary` |
-| `String` | `str`, `text`, `quoted` |
-| `Char` | `character`, `charlit` |
-| `SpecialChar` | `escape` |
-| `Keyword` | `kw`, `keywords`, `reserved`, `tag` |
-| `BuiltIn` | `builtin` |
-| `DataType` | `type`, `datatype` |
-| `Function` | `func`, `fun`, `call` |
-| `Constant` | `const`, `literal` |
-| `ControlFlow` | `flow`, `control` |
-| `Operator` | `op`, `ops` |
-| `Comment` | `comments`, `line_comment`, `block_comment` |
-| `Documentation` | `doc`, `docs` |
-| `Preprocessor` | `pragma`, `directive` |
-| `Import` | `include`, `use` |
-| `Attribute` | `attr` |
-| `Others` | `label` |
-| `Normal` | `punct`, `punctuation`, `space`, `spaces`, `whitespace`, `ws`, `newline`, `lparen`, `rparen`, `lbrace`, `rbrace`, `lbracket`, `rbracket`, `comma`, `semicolon` |
+```mgff
+d Comment = \x23 ( Anything )*
+        > autoclass style(Comment)
+```
 
-Prefer `autoclass` while a grammar is taking shape, and an explicit `class` for
-anything the derivation gets wrong — an explicit `class` is never second-guessed.
-
-A production carrying neither attribute is `Normal`.
+A production carrying neither attribute is unclassed, and only its name reaches
+it.
 
 ### Naming a list of attributes
 
@@ -265,7 +244,7 @@ another macro's attributes splices it in. This is the tidy way to give many
 tokens the same treatment:
 
 ```mgff
-d Highlighted > autoclass
+d Classed > autoclass
 
 t Lex (
     d Ident = Letter ( AlNum )*
@@ -393,7 +372,7 @@ gives `out/Toy.xml`:
         <DetectChar char="(" attribute="Normal" context="Atom" beginRegion="Atom"/>
         <RegExpr String="#[\p{L}\p{Nd} \t]*" attribute="Comment"/>
         <keyword String="keyword" attribute="Keyword"/>
-        <RegExpr String="[0-9]+(?:\.[0-9]+)?" attribute="Float.Literal"/>
+        <RegExpr String="[0-9]+(?:\.[0-9]+)?" attribute="Float"/>
         <RegExpr String="[\p{L}_][\p{L}\p{Nd}_]*" attribute="Variable"/>
         <DetectSpaces attribute="Normal"/>
         <Detect2Chars char="&lt;" char1="=" attribute="Operator"/>
@@ -409,7 +388,7 @@ gives `out/Toy.xml`:
         <DetectChar char="(" attribute="Normal" context="Atom" beginRegion="Atom"/>
         <RegExpr String="#[\p{L}\p{Nd} \t]*" attribute="Comment"/>
         <keyword String="keyword" attribute="Keyword"/>
-        <RegExpr String="[0-9]+(?:\.[0-9]+)?" attribute="Float.Literal"/>
+        <RegExpr String="[0-9]+(?:\.[0-9]+)?" attribute="Float"/>
         <RegExpr String="[\p{L}_][\p{L}\p{Nd}_]*" attribute="Variable"/>
         <DetectSpaces attribute="Normal"/>
         <Detect2Chars char="&lt;" char1="=" attribute="Operator"/>
@@ -425,7 +404,7 @@ gives `out/Toy.xml`:
       <itemData name="Normal" defStyleNum="dsNormal"/>
       <itemData name="Comment" defStyleNum="dsComment"/>
       <itemData name="Keyword" defStyleNum="dsKeyword"/>
-      <itemData name="Float.Literal" defStyleNum="dsFloat"/>
+      <itemData name="Float" defStyleNum="dsFloat"/>
       <itemData name="Variable" defStyleNum="dsVariable"/>
       <itemData name="Operator" defStyleNum="dsOperator"/>
     </itemDatas>
@@ -437,9 +416,9 @@ gives `out/Toy.xml`:
 ```
 
 Reading it back against the grammar: the four keywords became a hashed list, the
-length-based operators put their two-character forms first, `class(Float
-Literal)` kept both classes in the itemData name while colouring as a float,
-`autoclass` found `Comment` by name and `Variable` through `Ident`, and the
+length-based operators put their two-character forms first, `class(Literal)
+style(Float)` coloured the number as a float while naming what it is,
+`autoclass` classed `Comment` by its own name, and the
 bracketing `Atom` production became a context that folds — holding the tokens
 `Parse` names inside it, which is why `Skipped` is written at all.
 
@@ -469,7 +448,7 @@ pandoc --syntax-definition out/Toy.xml sample.md -o sample.html
   can see; whether that line *should* have followed is not.
 - **No recursive tokens.** A `Lex` production that reaches itself is rejected,
   because a Kate rule matches with an expression.
-- **One style per rule.** Extra classes survive in the itemData name, but Kate
+- **One style per rule.** Qualifiers survive in the itemData name, but Kate
   colours by the first one that names a default style.
 - **Longest-match choice is ordered, not measured.** For `|` the options are
   emitted longest fixed option first, which is exact for fixed-length options

@@ -8,7 +8,7 @@ derived once here, format-independently; `kate` and `textmate` only spell it.
     Machine                       Kate                    TextMate
     ------------------------------------------------------------------------
     Context                       <context>               a repository entry
-    Context.classes               attribute=              contentName
+    Context.styles               attribute=              contentName
     Context.line_end              lineEndContext=         while
     ContextRule.push              context="X"             begin + patterns
     ContextRule.pop               context="#pop"          the end expression
@@ -42,7 +42,7 @@ from ...mgff.common.characters import CHARACTER, CHARACTER_SET
 from ...mgff.common.rules import Choice, MacroCall, Reference, Repetition, Rule, Sequence
 from ...mgff.lexing.cst import Item, Text
 from ...mgff.semantics.model import Production, Target
-from .classes import classes_of
+from .styles import styles_of
 from .naming import NameAllocator, safe_identifier
 from .regex import regex_of
 from .walk import flatten, fuse_literals, nullable, single_character, walk
@@ -52,7 +52,7 @@ START_PRODUCTION = "File"
 
 #: What a production becomes in the machine.
 SPAN = "span"  # a context of its own
-TOKEN = "token"  # one rule, coloured by its classes
+TOKEN = "token"  # one rule, coloured by its styles
 INLINE = "inline"  # transparent: its parts belong to whoever reached it
 
 #: What `Context.line_end` may say besides the name of a context.
@@ -90,7 +90,7 @@ class ContextRule:
     """
 
     match: Match
-    classes: list[str] = field(default_factory=list)
+    styles: list[str] = field(default_factory=list)
     push: str | None = None
     pop: int = 0
     region: str | None = None
@@ -100,12 +100,12 @@ class ContextRule:
 class Context:
     """One state of the machine: a place a line may begin, and its rules.
 
-    `classes` colour whatever the context holds that no rule of its own claims,
+    `styles` colour whatever the context holds that no rule of its own claims,
     which is how a comment colours its body rather than only its `#`.
     """
 
     name: str
-    classes: list[str] = field(default_factory=list)
+    styles: list[str] = field(default_factory=list)
     rules: list[ContextRule] = field(default_factory=list)
     line_end: str = STAY
     #: The production this context came from, for folding regions and messages.
@@ -302,9 +302,9 @@ def _looping(node: Repetition) -> Repetition:
 # -- classifying productions -----------------------------------------------
 
 
-#: A fixed character that opens or closes a span, and the classes it carries.
-#: A marker written as a macro of its own — `d DefMarker = d > class(Keyword)` —
-#: keeps its class here while the context it opens keeps another, which is how a
+#: A fixed character that opens or closes a span, and the styles it carries.
+#: A marker written as a macro of its own — `d DefMarker = d > style(Keyword)` —
+#: keeps its style here while the context it opens keeps another, which is how a
 #: keyword opens a span whose body is not a keyword.
 Terminal = tuple[str, list[str]]
 
@@ -333,7 +333,10 @@ class Classifier:
     def _classify(self, production: Production) -> str:
         if self.brackets_of(production) or self.line_openings_of(production):
             return SPAN
-        if classes_of(production) != ["Normal"] and self.is_regular(production):
+        # A production nothing would colour is no rule of its own: whatever
+        # reached it colours it, which is what keeps whitespace and punctuation
+        # out of the contexts as rules.
+        if styles_of(production) not in ([], ["Normal"]) and self.is_regular(production):
             return TOKEN
         return INLINE
 
@@ -349,7 +352,7 @@ class Classifier:
     # -- what a production opens and closes with ---------------------------
 
     def terminal_of(self, part: Rule) -> Terminal | None:
-        """The one character a part matches, with the classes it carries.
+        """The one character a part matches, with the styles it carries.
 
         A part naming a macro is followed, so a marker keeps the class its own
         definition gave it — which is what tells `d` apart from the body it
@@ -363,7 +366,7 @@ class Classifier:
             if production is not None and len(production.alternatives) == 1:
                 char = single_character(production.alternatives[0])
                 if char is not None:
-                    return (char, classes_of(production))
+                    return (char, styles_of(production))
         return None
 
     def spanning_alternatives(self, production: Production) -> list[list[Rule]]:
@@ -481,7 +484,7 @@ class MachineBuilder:
         if start is None:
             return self.machine
         self.machine.start = self.context_for(
-            [start.rule], name=START_PRODUCTION, classes=[], depth=0
+            [start.rule], name=START_PRODUCTION, styles=[], depth=0
         )
         return self.machine
 
@@ -491,9 +494,10 @@ class MachineBuilder:
         self,
         tails: list[Rule],
         name: str,
-        classes: list[str],
+        styles: list[str],
         depth: int,
         escapable: bool = False,
+        pushed: bool = False,
     ) -> str:
         """The context a set of rule tails begins a line in, built once per state.
 
@@ -504,23 +508,32 @@ class MachineBuilder:
         what a chained line context pops back over, and `escapable` says whether
         leaving that way is allowed at all — a bracketed span ends on its
         closing character and nowhere else.
+
+        `pushed` marks the body of a span. Such a state is entered by a push and
+        left by a pop, which the state a document starts in is neither, so the
+        two never share a context however alike what they match — a grammar whose
+        brackets hold exactly what the file holds would otherwise pop at the top.
         """
         parts, leftovers = self.reading(tails)
-        # The classes belong to the key: an attribute line and an alternative
-        # line may leave the same thing behind and still not be the same state.
-        key = f"{self.signature(tails)}#{depth}#{','.join(classes)}"
+        # The styles and the way in belong to the key: an attribute line and an
+        # alternative line may leave the same thing behind and still not be the
+        # same state.
+        key = f"{self.signature(tails)}#{depth}#{','.join(styles)}#{pushed:d}"
         found = self.states.get(key)
         if found is not None:
             return found
 
         context = Context(
             name=self.names.allocate(safe_identifier(name) or "Context"),
-            classes=list(classes),
+            styles=list(styles),
             origin=name,
         )
         self.states[key] = context.name
         self.machine.contexts[context.name] = context
-        context.rules = self.rules_for(parts, classes)
+        # Extended rather than assigned: the walk below reaches the states this
+        # one leads to, and a span whose body is this very state inserts its
+        # closing rule while we are still here. Assigning would drop it.
+        context.rules.extend(self.rules_for(parts, styles))
 
         if escapable and depth > 0:
             # A chain must be able to leave: a line beginning with something
@@ -542,7 +555,7 @@ class MachineBuilder:
             context.line_end = STAY
         else:
             context.line_end = self.context_for(
-                following, f"{name}Line", classes, depth + 1, escapable
+                following, f"{name}Line", styles, depth + 1, escapable, pushed
             )
         return context.name
 
@@ -565,7 +578,7 @@ class MachineBuilder:
 
     # -- rules -------------------------------------------------------------
 
-    def rules_for(self, parts: list[Rule], classes: list[str]) -> list[ContextRule]:
+    def rules_for(self, parts: list[Rule], styles: list[str]) -> list[ContextRule]:
         """The rules a line's worth of parts contributes, pushes before matches.
 
         A push comes first so an opening character is not eaten by a token of
@@ -586,19 +599,19 @@ class MachineBuilder:
                 continue
             production = self._referenced(part)
             if production is None:
-                matches.append((len(self.order), ContextRule(match=Match(part), classes=list(classes))))
+                matches.append((len(self.order), ContextRule(match=Match(part), styles=list(styles))))
                 continue
             kind = self.classify.of(production)
             if kind == SPAN:
-                pushes.extend(self.span_rules(production, classes))
+                pushes.extend(self.span_rules(production, styles))
             elif kind == TOKEN:
                 rank = self.order.index(production.name) if production.name in self.order else len(self.order)
                 matches.append(
-                    (rank, ContextRule(match=Match(part), classes=classes_of(production)))
+                    (rank, ContextRule(match=Match(part), styles=styles_of(production)))
                 )
             else:  # transparent, and one expression's worth of matching
                 matches.append(
-                    (len(self.order), ContextRule(match=Match(part), classes=list(classes)))
+                    (len(self.order), ContextRule(match=Match(part), styles=list(styles)))
                 )
 
         matches.sort(key=lambda ranked: ranked[0])
@@ -650,7 +663,7 @@ class MachineBuilder:
                 return options[0] if len(options) == 1 else Choice(options, part.symbol)
         return None
 
-    def span_rules(self, production: Production, classes: list[str]) -> list[ContextRule]:
+    def span_rules(self, production: Production, styles: list[str]) -> list[ContextRule]:
         """The rules entering a span, and the rules its short alternatives give.
 
         `d Atom = Number / \\( Expr \\)` brackets with one alternative and matches
@@ -663,26 +676,26 @@ class MachineBuilder:
         inner = self.span_context(production)
 
         if brackets is not None:
-            (opening, opening_classes), _ = brackets
+            (opening, opening_styles), _ = brackets
             rules.append(
                 ContextRule(
                     match=Match(
                         _character(opening), word_boundary=_is_word_character(opening)
                     ),
-                    classes=opening_classes or classes_of(production),
+                    styles=opening_styles or styles_of(production),
                     push=inner,
                     region=production.name,
                 )
             )
         else:
-            for opening, opening_classes in self.classify.line_openings_of(production):
+            for opening, opening_styles in self.classify.line_openings_of(production):
                 rules.append(
                     ContextRule(
                         match=Match(
                             _character(opening),
                             word_boundary=_is_word_character(opening),
                         ),
-                        classes=opening_classes or classes_of(production),
+                        styles=opening_styles or styles_of(production),
                         push=inner,
                     )
                 )
@@ -693,7 +706,7 @@ class MachineBuilder:
             for alternative in production.alternatives
             if len(parts := parts_of(alternative)) == 1
         ]
-        rules.extend(self.rules_for(short, classes))
+        rules.extend(self.rules_for(short, styles))
         return rules
 
     def span_context(self, production: Production) -> str:
@@ -702,22 +715,27 @@ class MachineBuilder:
         if found is not None:
             return found
         brackets = self.classify.brackets_of(production)
-        classes = classes_of(production)
+        styles = styles_of(production)
         bodies: list[Rule] = []
         for parts in self.classify.spanning_alternatives(production):
             # Everything between the opening and, for a bracketing span, the
             # closing character; a line span keeps everything after its opening.
             bodies.append(_sequence(list(parts[1:-1] if brackets else parts[1:])))
         name = self.context_for(
-            bodies, production.name, classes, depth=0, escapable=brackets is None
+            bodies,
+            production.name,
+            styles,
+            depth=0,
+            escapable=brackets is None,
+            pushed=True,
         )
 
         context = self.machine.contexts[name]
         if brackets is not None:
-            _, (closing, closing_classes) = brackets
+            _, (closing, closing_styles) = brackets
             closer = ContextRule(
                 match=Match(_character(closing)),
-                classes=closing_classes or classes,
+                styles=closing_styles or styles,
                 pop=1,
                 region=production.name,
             )
@@ -751,7 +769,7 @@ def _same_rule(one: ContextRule, other: ContextRule) -> bool:
         and one.match.word_boundary == other.match.word_boundary
         and one.push == other.push
         and one.pop == other.pop
-        and one.classes == other.classes
+        and one.styles == other.styles
     )
 
 
@@ -773,7 +791,7 @@ def _distinct(rules: list[ContextRule], lookup) -> list[ContextRule]:
             rule.match.word_boundary,
             rule.push,
             rule.pop,
-            tuple(rule.classes),
+            tuple(rule.styles),
         )
         if key not in seen:
             seen.add(key)

@@ -68,6 +68,15 @@ def pascal_case(name: str) -> str:
     return "".join(word[:1].upper() + word[1:] for word in words)
 
 
+def words_of(name: str) -> list[str]:
+    """A name split into words, at separators and at case changes.
+
+    `LineComment`, `line_comment` and `line-comment` all split the same way.
+    """
+    spaced = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", name)
+    return [word for word in re.split(r"[^0-9A-Za-z]+", spaced) if word]
+
+
 def snake_case(name: str) -> str:
     """`AssignList` gives `assign_list`."""
     spaced = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", name)

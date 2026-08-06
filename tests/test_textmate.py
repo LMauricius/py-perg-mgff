@@ -102,16 +102,18 @@ def test_a_helper_production_is_inlined_rather_than_emitted(toy):
 # -- scopes -----------------------------------------------------------------
 
 
-def test_a_class_becomes_the_scope_a_theme_knows_ending_in_the_language(toy):
+def test_a_style_becomes_the_scope_a_theme_knows_ending_in_the_language(toy):
     assert entry(toy, "keyword")["name"] == "keyword.toy"
     assert entry(toy, "comment")["name"] == "comment.toy"
 
 
-def test_extra_classes_survive_after_the_one_that_colours_the_token(toy):
-    assert entry(toy, "number")["name"] == "constant.numeric.float.literal.toy"
+def test_a_class_contributes_no_scope_of_its_own(toy):
+    """`class(Literal) style(Float)` is a float to a theme and a literal to the
+    phase that matches on it; only the style reaches the scope name."""
+    assert entry(toy, "number")["name"] == "constant.numeric.float.toy"
 
 
-def test_autoclass_reaches_a_scope_through_the_shared_synonyms(toy):
+def test_a_style_reached_through_a_named_attribute_list(toy):
     assert entry(toy, "ident")["name"] == "variable.other.toy"
 
 
@@ -122,7 +124,7 @@ def test_normal_is_no_scope_at_all(toy):
 
 
 @pytest.mark.parametrize(
-    "classes, scope",
+    "styles, scope",
     [
         (["Normal"], None),
         (["Keyword"], "keyword.toy"),
@@ -133,8 +135,8 @@ def test_normal_is_no_scope_at_all(toy):
         ([], None),
     ],
 )
-def test_scope_derivation(classes, scope):
-    assert scope_for(classes, "toy") == scope
+def test_scope_derivation(styles, scope):
+    assert scope_for(styles, "toy") == scope
 
 
 # -- what the expressions actually match ------------------------------------

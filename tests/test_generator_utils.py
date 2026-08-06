@@ -7,6 +7,8 @@ from pyperg.mgff.common.characters import CHARACTER_SET
 from pyperg.mgff.common.charset import parse_character_set
 from pyperg.mgff.common.rules import Choice, MacroCall, Reference, Repetition, Sequence
 from pyperg.mgff.semantics.model import Production
+from pyperg.diagnostics.errors import GeneratorError
+from pyperg.generators.utils.classes import classes_of
 from pyperg.generators.utils.emit import Emitter
 from pyperg.generators.utils.graph import (
     cycles,
@@ -17,6 +19,7 @@ from pyperg.generators.utils.graph import (
 )
 from pyperg.generators.utils.naming import NameAllocator, pascal_case, safe_identifier, snake_case
 from pyperg.generators.utils.regex import alternation, character_class, regex_of
+from pyperg.generators.utils.styles import styles_of
 from pyperg.generators.utils.walk import fuse_literals, literal_of, nullable, references
 from pyperg.generators.utils.xmlwrite import Element, escape_attribute
 
@@ -240,3 +243,57 @@ def test_the_emitter_tracks_depth():
         out.line()
     out.line("c")
     assert out.render() == "a\n  b\n\nc\n"
+
+
+# -- classes and styles -----------------------------------------------------
+
+
+def labelled(name: str, **attributes) -> Production:
+    """A production carrying nothing but its name and its attributes."""
+    return Production(name=name, attributes=dict(attributes))
+
+
+def test_a_class_is_kept_exactly_as_it_was_written():
+    """Classes are free text: a later phase matches its terminals against them."""
+    assert classes_of(labelled("LParen", **{"class": ["\\("]})) == ["\\("]
+    assert classes_of(labelled("Number", **{"class": ["Float", "Literal"]})) == [
+        "Float",
+        "Literal",
+    ]
+
+
+def test_autoclass_is_the_macros_own_name():
+    assert classes_of(labelled("Comment", autoclass=[])) == ["Comment"]
+
+
+def test_a_production_asking_for_no_class_has_none():
+    assert classes_of(labelled("Space")) == []
+
+
+def test_an_empty_class_is_reported():
+    with pytest.raises(GeneratorError, match="needs at least one class"):
+        classes_of(labelled("Int", **{"class": []}))
+
+
+def test_a_style_is_the_vocabulary_plus_its_qualifiers():
+    assert styles_of(labelled("Op", style=["Operator"])) == ["Operator"]
+    assert styles_of(labelled("If", style=["Keyword", "Control"])) == [
+        "Keyword",
+        "Control",
+    ]
+
+
+def test_a_production_asking_for_no_style_is_unstyled():
+    """Nothing is derived from a name, so an unstyled match stays unstyled."""
+    assert styles_of(labelled("Comment")) == []
+
+
+def test_a_style_outside_the_vocabulary_is_reported():
+    with pytest.raises(GeneratorError, match="is no highlighting style"):
+        styles_of(labelled("Int", style=["Mine"]))
+    with pytest.raises(GeneratorError, match="needs a style"):
+        styles_of(labelled("Int", style=[]))
+
+
+def test_only_the_first_name_of_a_style_has_to_be_known():
+    assert styles_of(labelled("If", style=["Keyword", "Mine"])) == ["Keyword", "Mine"]

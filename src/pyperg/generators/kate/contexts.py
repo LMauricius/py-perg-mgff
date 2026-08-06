@@ -8,7 +8,7 @@ grammar's `Parse` target, and this module writes it down:
     Machine                Kate
     ----------------------------------------------------
     Context                <context>
-    Context.classes        attribute=, the style its text takes
+    Context.styles         attribute=, the style its text takes
     Context.line_end       lineEndContext=
     ContextRule.push       context="Name"
     ContextRule.pop n      context="#pop" repeated n times
@@ -49,7 +49,7 @@ import sys
 from ...diagnostics.errors import GeneratorError
 from ...mgff.common.rules import Reference
 from ...mgff.semantics.model import GrammarModel, Production, Target
-from ..utils.classes import classes_of
+from ..utils.styles import styles_of
 from ..utils.highlight import token_order
 from ..utils.machine import POP
 from ..utils.machine import Context as MachineContext
@@ -69,7 +69,7 @@ LEX_TARGET = "Lex"
 PARSE_TARGET = "Parse"
 
 
-# -- token classes ---------------------------------------------------------
+# -- styles ----------------------------------------------------------------
 
 
 class ItemDatas:
@@ -80,11 +80,11 @@ class ItemDatas:
 
     def attribute_for(self, production: Production) -> str:
         """Register a production's style and return the itemData's name."""
-        return self.for_classes(classes_of(production))
+        return self.for_styles(styles_of(production))
 
-    def for_classes(self, classes: list[str]) -> str:
-        """Register a set of classes and return the itemData's name."""
-        name, default_style = style_for(classes or [FALLBACK_STYLE])
+    def for_styles(self, styles: list[str]) -> str:
+        """Register a set of styles and return the itemData's name."""
+        name, default_style = style_for(styles or [FALLBACK_STYLE])
         self.styles.setdefault(name, default_style)
         return name
 
@@ -170,7 +170,7 @@ class ContextBuilder:
         """One context of the machine, with its rules in the order they are tried."""
         element = self.context(
             context.name,
-            attribute=self.item_datas.for_classes(context.classes),
+            attribute=self.item_datas.for_styles(context.styles),
             lineEndContext=context.line_end,
         )
         for rule in context.rules:
@@ -189,7 +189,7 @@ class ContextBuilder:
         Anything else is one expression.
         """
         where = RuleContext(
-            attribute=self.item_datas.for_classes(rule.classes),
+            attribute=self.item_datas.for_styles(rule.styles),
             context=rule.push or (POP * rule.pop if rule.pop else None),
             begin_region=rule.region if rule.push else None,
             end_region=rule.region if rule.pop and not rule.push else None,

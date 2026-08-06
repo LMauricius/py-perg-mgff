@@ -75,7 +75,7 @@ And so the same two conclusions hold:
 t Lex (
     d Digit = 0-9
     d Int   = ( Digit )+
-            > class(DecVal)
+            > style(DecVal)
 
     d File = ( (Space)/(Comment)/(Keyword)/(Int)/(Ident) )*
 )
@@ -117,7 +117,7 @@ a set of contexts, where a context is *a place a line may begin* and holds the
 rules its place in the grammar reaches — and nothing else.
 
 A production becomes a **span** when it opens with a fixed character and either
-closes with one or runs to a line break; a **token** when it carries a `class`
+closes with one or runs to a line break; a **token** when it carries a `style`
 and has a regular form; and is **transparent** otherwise, its parts belonging to
 whoever reached it.
 
@@ -125,7 +125,7 @@ whoever reached it.
 t Parse (
     d Definition = DefMarker WS Head Gap EqualsMarker Items NL
     d Comment    = CommentMarker Items NL
-                 > class(Comment)
+                 > style(Comment)
     d Group      = \\( Items \\)
     d Line       = (Definition)/(Comment)
     d File       = ( (Line)/(NL) )*
@@ -157,7 +157,7 @@ holds, so a group nested inside a comment is still comment-coloured.
 
 **Every token is an entry of its own**, included wherever it is reachable rather
 than written out again in each entry that can reach it. Where the same macro is
-reached with different classes — a name is a name in a body and an attribute on
+reached with different styles — a name is a name in a body and an attribute on
 an attribute line — each gets an entry and a scope of its own.
 
 Since a context holds only what it reaches, **`Parse` names every token it wants
@@ -180,12 +180,12 @@ colours the longest prefix it knows, which is why the path runs general to
 specific and ends in the language's own identifier — so two languages that both
 have keywords can still be themed apart.
 
-The `class` and `autoclass` attributes are exactly the ones the Kate backend
+The `style`, `class` and `autoclass` attributes are exactly the ones the Kate backend
 reads, and mean the same thing; only the spelling of the result differs. See
 [the Kate generator's documentation](kate-generator.md#attributes) for
-`autoclass`, the synonym table and named attribute lists.
+`style`, `class`, `autoclass` and named attribute lists.
 
-| `class` | Scope prefix | | `class` | Scope prefix |
+| `style` | Scope prefix | | `style` | Scope prefix |
 | --- | --- | --- | --- | --- |
 | `Normal` | *(none)* | | `DataType` | `storage.type` |
 | `Keyword` | `keyword` | | `DecVal` | `constant.numeric.integer` |
@@ -208,13 +208,13 @@ reads, and mean the same thing; only the spelling of the result differs. See
 editor's default colour, so a pattern that names nothing is exactly right for
 whitespace and punctuation. Where Kate has to say `dsNormal`, this says nothing.
 
-**Several classes.** The first class a theme knows contributes the prefix, and
+**Qualifiers.** The style a theme knows contributes the prefix, and
 every other class follows as a segment of its own — the same idea as Kate's
 dotted itemData name:
 
 ```mgff
 d Number = ( Digit )+ ( . ( Digit )+ )?
-        > class(Float Literal)
+        > style(Float Literal)
 ```
 
 ```json
@@ -223,7 +223,8 @@ d Number = ( Digit )+ ( . ( Digit )+ )?
 
 A theme that only knows `constant.numeric` colours it as a number; one that
 wants to pick out your literals can match the whole path. A class naming no
-known prefix still becomes a segment, so `class(Mine)` gives `mine.toy`.
+known prefix still becomes a segment, so `style(Keyword Mine)` gives
+`keyword.mine.toy`.
 
 ---
 
@@ -255,7 +256,7 @@ d Keyword = l e t
           | i f
           | e l s e
           | w h i l e
-        > class(Keyword)
+        > style(Keyword)
 ```
 
 ```json
@@ -337,6 +338,7 @@ plus the settings only an editor extension needs. Generating from it gives:
 
 ```json
 {
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
   "name": "Toy",
   "scopeName": "source.toy",
   "fileTypes": [
@@ -420,7 +422,7 @@ plus the settings only an editor extension needs. Generating from it gives:
       "match": "\\b(?:while|else|let|if)\\b"
     },
     "number": {
-      "name": "constant.numeric.float.literal.toy",
+      "name": "constant.numeric.float.toy",
       "match": "[0-9]+(?:\\.[0-9]+)?"
     },
     "ident": {
@@ -440,9 +442,9 @@ plus the settings only an editor extension needs. Generating from it gives:
 
 Reading it back against the grammar: the four keywords became one bounded
 alternation, the length-based operators put their two-character forms first,
-`class(Float Literal)` kept both classes in the scope while colouring as a
-float, `autoclass` found `Comment` by name and `Variable` through `Ident`,
-`class(Normal)` left `Space` and the parentheses unscoped, and the bracketing
+`class(Literal) style(Float)` scoped the number as a float while naming what it
+is, `autoclass` classed `Comment` by its own name, `style(Normal)` left `Space`
+and the parentheses unscoped, and the bracketing
 `Atom` production became a span that nests — and a bracket pair that folds.
 
 ---

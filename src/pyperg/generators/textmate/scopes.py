@@ -1,37 +1,37 @@
-"""Token classes as TextMate scope names.
+"""Highlighting styles as TextMate scope names.
 
-A TextMate grammar says what a token *is* by giving it a **scope name**: a
+A TextMate grammar says what a match looks like by giving it a **scope name**: a
 dotted path such as `keyword.control.toy`, ending in the language's own name. A
 theme matches a scope by prefix and colours the longest prefix it knows, which
 is why the path is ordered general to specific.
 
-That makes the mapping from `utils.classes` straightforward — each class names
+That makes the mapping from `utils.styles` straightforward — each style names
 the prefix a theme will recognise — with two rules on top:
 
 - **The language suffix.** Every scope ends in the language's identifier, so two
   languages that both have keywords can still be themed apart.
-- **Extra classes stay in the path.** `class(Float Literal)` gives
-  `constant.numeric.float.literal.toy`: the first class a theme knows decides
-  the colour, and the rest survive for a theme that cares. This is what Kate's
-  itemData name does, spelled the way TextMate spells it.
+- **Qualifiers stay in the path.** `style(Float Literal)` gives
+  `constant.numeric.float.literal.toy`: the style decides the colour, and the
+  qualifiers survive for a theme that cares. This is what Kate's itemData name
+  does, spelled the way TextMate spells it.
 
-`Normal` maps to no scope at all. Unmatched text in TextMate is already the
-editor's default colour, so a rule with no scope name is exactly right for
-whitespace and punctuation — where Kate must name `dsNormal`, this names
-nothing.
+`Normal` maps to no scope at all, and so does a match with no style. Unmatched
+text in TextMate is already the editor's default colour, so a rule with no scope
+name is exactly right for whitespace and punctuation — where Kate must name
+`dsNormal`, this names nothing.
 """
 
 from __future__ import annotations
 
 import re
 
-from ..utils.classes import FALLBACK_CLASS, canonical_class
+from ..utils.styles import FALLBACK_STYLE, canonical_style
 
 #: Anything that may not appear inside one segment of a scope name.
 _UNSAFE = re.compile(r"[^0-9a-z]+")
 
-#: The scope prefix each shared class stands for. `Normal` maps to nothing,
-#: which means the token keeps the editor's default colour.
+#: The scope prefix each shared style stands for. `Normal` maps to nothing,
+#: which means the match keeps the editor's default colour.
 SCOPE_PREFIXES: dict[str, str] = {
     "Normal": "",
     "Keyword": "keyword",
@@ -68,7 +68,7 @@ SCOPE_PREFIXES: dict[str, str] = {
 
 
 def scope_segment(text: str) -> str:
-    """One class as a segment of a scope name.
+    """One style name as a segment of a scope name.
 
     A scope name is lower case and separated by dots, so anything that would
     read as a separator becomes a hyphen, which TextMate allows.
@@ -76,25 +76,25 @@ def scope_segment(text: str) -> str:
     return _UNSAFE.sub("-", text.lower()).strip("-")
 
 
-def scope_for(classes: list[str], language: str) -> str | None:
-    """The scope name a token's classes give it, or None when they give none.
+def scope_for(styles: list[str], language: str) -> str | None:
+    """The scope name a match's styles give it, or None when they give none.
 
-    The first class naming a known prefix contributes it, every other class
+    The first style naming a known prefix contributes it, every qualifier
     follows as a segment of its own, and the language's identifier ends the
-    path. `Normal` alone contributes nothing, so the token stays unscoped.
+    path. `Normal` alone contributes nothing, so the match stays unscoped.
     """
     prefix = ""
     extras: list[str] = []
-    for name in classes:
-        known = canonical_class(name)
+    for name in styles:
+        known = canonical_style(name)
         if known is not None:
             mapped = SCOPE_PREFIXES.get(known, "")
-            # The first class a theme knows decides the colour; a later one has
-            # to settle for being a segment, the way Kate joins itemData names.
+            # The style a theme knows decides the colour; a qualifier has to
+            # settle for being a segment, the way Kate joins itemData names.
             if mapped and not prefix:
                 prefix = mapped
                 continue
-            if known == FALLBACK_CLASS:
+            if known == FALLBACK_STYLE:
                 continue
         segment = scope_segment(name)
         if segment:

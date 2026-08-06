@@ -64,7 +64,7 @@ d Escape = \\ SimpleEscape
          / \\ u Hex Hex Hex Hex
          / \\ U Hex Hex Hex Hex Hex Hex Hex Hex
          / \\ < ( UnicodeNameChar )+ >
-    > class(SpecialChar)
+    > style(SpecialChar)
 
 # The two escapes whose character is ordinary text once written: `(` and `)`
 # have to be escaped only because they are the brackets. The pair is matched as
@@ -73,7 +73,7 @@ d Escape = \\ SimpleEscape
 # group that was never opened.
 d LiteralEscape = \\ \(
                 / \\ \)
-    > class(SpecialChar)
+    > style(SpecialChar)
 
 
 # -- character sets --------------------------------------------------------
@@ -85,7 +85,7 @@ d SetChar = Escape
 
 # A range, `E-F`, both endpoints a single character.
 d CharRange = SetChar - SetChar
-    > class(DataType Range)
+    > class(Range) style(DataType)
 
 # The Unicode categories a set may name, in both spellings. A category is
 # written out character by character, since bare text such as `Lu` in a body is
@@ -160,7 +160,7 @@ d Category = C c
            | T i t l e c a s e _ L e t t e r
            | U n a s s i g n e d
            | U p p e r c a s e _ L e t t e r
-    > class(DataType Category)
+    > class(Category) style(DataType)
 
 # One part of a set: a range, a category, or a single character. An escape is a
 # character too, which is what makes `\_|\t` one set rather than a set with an
@@ -172,7 +172,7 @@ d CharPart = CharRange
 # A set of two or more parts. A set of one part is a range or a category on its
 # own; a lone character is left to be read as the call it may also be.
 d CharSet = CharPart ( BarChar CharPart )+
-    > class(DataType Set)
+    > class(Set) style(DataType)
 
 
 # -- the markers -----------------------------------------------------------
@@ -180,61 +180,61 @@ d CharSet = CharPart ( BarChar CharPart )+
 # `d` a macro definition, `t` a generation target, `p` a name prefix. A marker
 # has its role only as the first item of a line.
 d DefMarker = d
-    > class(Keyword)
+    > style(Keyword)
 d TargetMarker = t
-    > class(Keyword)
+    > style(Keyword)
 d PrefixMarker = p
-    > class(Keyword)
+    > style(Keyword)
 
 # The three as one token. A keyword list matches between word boundaries, so
 # the `d` of `Digit` is not one of these.
 d LineMarker = d
              | t
              | p
-    > class(Keyword)
+    > style(Keyword)
 
 # `|` a length-based alternative, `/` an order-based one. The same two
 # characters spell an inline choice, `(a)|(b)`, and separate the parts of a
 # character set — which is matched as a set before the separator is reached.
 d ChoiceMarker = |
                / /
-    > class(ControlFlow)
+    > style(ControlFlow)
 
 # The two spellings on their own, so a line opening with one can be told from a
 # line opening with the other.
 d BarMarker = |
-    > class(ControlFlow)
+    > style(ControlFlow)
 d SlashMarker = /
-    > class(ControlFlow)
+    > style(ControlFlow)
 
 # The first top-level `=` separates a head from its body; `>` opens attributes.
 d EqualsMarker = =
-    > class(Operator)
+    > style(Operator)
 d AttrMarker = >
-    > class(Operator)
+    > style(Operator)
 
 # A comment is a line whose first item is `#`.
 d CommentMarker = #
-    > class(Comment)
+    > style(Comment)
 
 
 # -- the rest of a line ----------------------------------------------------
 
 d Space = ( \_|\t )+
-    > class(Normal)
+    > style(Normal)
 
 d Comment = CommentMarker ( CommentChar )*
-    > class(Comment)
+    > style(Comment)
 
 # `(` and `)` are the only brackets. Every other character is text.
 d LParen = \(
-    > class(Normal)
+    > style(Normal)
 d RParen = \)
-    > class(Normal)
+    > style(Normal)
 
 # The text of a call: a macro's name, and the text a mixfix name is built from.
 d Name = ( NameChar )+
-    > class(Normal)
+    > style(Normal)
 
 
 t Lex (
@@ -319,9 +319,9 @@ t Parse (
     # ordinary items. A group among them carries lines of its own, so a comment
     # ends at the first newline that is not inside a group.
     d CommentLine = CommentMarker Items(PlainText)in(CommentGroup) NL
-        > class(Comment)
+        > style(Comment)
     d CommentGroup = Slot(CommentLines)
-        > class(Comment)
+        > style(Comment)
     d CommentLines = Items(PlainText)in(CommentGroup) ( NL Items(PlainText)in(CommentGroup) )*
 
     # -- definitions -------------------------------------------------------
@@ -348,7 +348,7 @@ t Parse (
               / SlashMarker BodyItems NL
 
     d AttrLine = AttrMarker AttrItems NL
-        > class(Attribute)
+        > style(Attribute)
 
     d BodyItems = Items(Text)in(SubGroup)
 
@@ -356,7 +356,7 @@ t Parse (
     # rather than falling back to the body's.
     d AttrItems = Items(PlainText)in(AttrGroup)
     d AttrGroup = Slot(AttrLines)
-        > class(Attribute)
+        > style(Attribute)
     d AttrLines = AttrItems ( NL AttrItems )*
 
     # A subgroup is the group written inside a body: its lines are items and

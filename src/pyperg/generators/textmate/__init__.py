@@ -31,8 +31,7 @@ from pathlib import Path
 from ...diagnostics.errors import GeneratorError
 from ...mgff.semantics.model import GrammarModel
 from ..base import Generator
-from ..utils.classes import words_of
-from ..utils.naming import pascal_case, safe_identifier
+from ..utils.naming import pascal_case, safe_identifier, words_of
 from ..utils.settings import setting, values
 from .repository import RepositoryBuilder
 
@@ -115,8 +114,8 @@ class TextMateGenerator(Generator):
         """The identifier VS Code files the language under, and every scope ends in.
 
         Lower case and hyphenated, since a scope name is a dotted path and an
-        identifier is compared verbatim. The name is split into words the way
-        `autoclass` splits one, so `MyToy` gives `my-toy` rather than `mytoy`.
+        identifier is compared verbatim. The name is split into words at case
+        changes too, so `MyToy` gives `my-toy` rather than `mytoy`.
         """
         given = setting(model.attributes, "id", None)
         if given:

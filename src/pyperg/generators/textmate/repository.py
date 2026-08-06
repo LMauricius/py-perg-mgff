@@ -9,7 +9,7 @@ differ only in how they spell the answer.
     Machine                Kate                   TextMate
     --------------------------------------------------------------------
     Context                <context>              a repository entry
-    Context.classes        attribute=             contentName
+    Context.styles         attribute=             contentName
     ContextRule.push       context="X"            begin, with nested patterns
     ContextRule.pop        context="#pop"         the end expression
     Context.line_end #pop  lineEndContext="#pop"  end: "$"
@@ -48,7 +48,7 @@ import sys
 from ...diagnostics.errors import GeneratorError
 from ...mgff.common.rules import Reference, Rule
 from ...mgff.semantics.model import GrammarModel, Production, Target
-from ..utils.classes import classes_of
+from ..utils.styles import styles_of
 from ..utils.highlight import token_order
 from ..utils.machine import POP, STAY
 from ..utils.machine import Context as MachineContext
@@ -218,7 +218,7 @@ class RepositoryBuilder:
         character, which is also the pair an editor folds; the end of the line;
         or the first line that does not carry the role on, which is `while`.
         """
-        scope = scope_for(rule.classes, self.language)
+        scope = scope_for(rule.styles, self.language)
         pattern: Pattern = {
             "name": region_scope(context.origin or context.name, self.language),
             "begin": opening,
@@ -229,7 +229,7 @@ class RepositoryBuilder:
                 }
             },
         }
-        content = scope_for(context.classes, self.language)
+        content = scope_for(context.styles, self.language)
         if content is not None:
             pattern["contentName"] = content
 
@@ -237,7 +237,7 @@ class RepositoryBuilder:
         if closing is not None:
             closing_regex = regex_for_rule(closing, self.lookup) or "$"
             pattern["end"] = closing_regex
-            closing_scope = scope_for(closing.classes, self.language)
+            closing_scope = scope_for(closing.styles, self.language)
             pattern["endCaptures"] = {
                 "0": {
                     "name": closing_scope
@@ -351,7 +351,7 @@ class RepositoryBuilder:
             )
             return None
         name = self.entry_name(production)
-        scope = scope_for(classes_of(production), self.language)
+        scope = scope_for(styles_of(production), self.language)
         self.entries[name] = match_pattern(production, scope, self.lex_lookup)
         return name
 
@@ -386,7 +386,7 @@ class RepositoryBuilder:
         expression = regex_for_rule(rule, self.lookup)
         if expression is None:
             return None
-        return _match(expression, scope_for(rule.classes, self.language))
+        return _match(expression, scope_for(rule.styles, self.language))
 
     def called_production(self, rule: MachineRule) -> Production | None:
         """The production a plain match rule calls, when that is all it does."""
@@ -399,16 +399,16 @@ class RepositoryBuilder:
     def token_entry(self, production: Production, rule: MachineRule) -> str | None:
         """The entry one token is filed under, built once and included after.
 
-        Keyed by the classes as well as the macro: the same name is a name
+        Keyed by the styles as well as the macro: the same name is a name
         wherever it is written, but on an attribute line it is an attribute, and
         the two want scopes of their own.
         """
         expression = regex_for_rule(rule, self.lookup)
         if expression is None:
             return None
-        # Keyed by the scope rather than the classes: `Normal` and no class at
+        # Keyed by the scope rather than the styles: `Normal` and no style at
         # all both mean "no scope", and one entry serves both.
-        scope = scope_for(rule.classes, self.language)
+        scope = scope_for(rule.styles, self.language)
         name = self.entry_name(production, scope)
         if name not in self.entries:
             self.entries[name] = _match(expression, scope)
@@ -431,7 +431,7 @@ class RepositoryBuilder:
 
 
 def _match(expression: str, scope: str | None) -> Pattern:
-    """A `match` pattern, scoped when its classes name a scope at all."""
+    """A `match` pattern, scoped when its styles name a scope at all."""
     pattern: Pattern = {}
     if scope is not None:
         pattern["name"] = scope
