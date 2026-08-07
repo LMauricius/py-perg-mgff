@@ -65,11 +65,19 @@ def escape_in_class(char: str) -> str:
 
 
 def _control_escape(char: str) -> str | None:
-    """The readable spelling of a control character, or None if it needs none."""
+    """The readable spelling of a character better not written raw, or None.
+
+    A control character is one such, and so are `U+FFFE` and `U+FFFF`: they are
+    invisible, they survive no round trip through a text editor, and XML 1.0
+    cannot carry them at all — not even as a character reference — so a pattern
+    holding one raw would make the Kate backend's document unparseable. The
+    other planes' non-characters are left alone: they are ordinary characters to
+    every format written here.
+    """
     known = {"\n": "\\n", "\r": "\\r", "\t": "\\t", "\f": "\\f", "\v": "\\v"}
     if char in known:
         return known[char]
-    if ord(char) < 0x20 or ord(char) == 0x7F:
+    if ord(char) < 0x20 or ord(char) == 0x7F or ord(char) in (0xFFFE, 0xFFFF):
         return f"\\x{{{ord(char):02x}}}"
     return None
 

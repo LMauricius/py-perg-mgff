@@ -88,9 +88,20 @@ def read_escape(text: str, index: int) -> tuple[str, int]:
         if not name or any(c not in _NAME_CHARS for c in name):
             raise LexError(f"invalid character name {name!r}")
         try:
-            return unicodedata.lookup(name.replace("_", " ")), end + 1
+            found = unicodedata.lookup(name.replace("_", " "))
         except KeyError:
             raise LexError(f"no character is named {name!r}") from None
+        # `lookup` answers named *sequences* as well — `KEYCAP_NUMBER_SIGN` is
+        # three code points — and an escape denotes exactly one character. Such
+        # a name is rejected here, where what is wrong can still be said; read
+        # on, it would reach the resolver as an unknown name spelled in
+        # characters nobody wrote.
+        if len(found) != 1:
+            raise LexError(
+                f"{name!r} names a sequence of {len(found)} characters, and an "
+                "escape denotes exactly one; write them out one escape each"
+            )
+        return found, end + 1
 
     raise LexError(f"unknown escape \\{kind}")
 

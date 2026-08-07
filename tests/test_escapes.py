@@ -56,3 +56,9 @@ def test_invalid_escapes(text):
 def test_escape_carries_no_role():
     """An escaped parenthesis is text, never the opening of a group."""
     assert resolve(r"\x28") == "("
+
+
+def test_a_named_sequence_is_not_one_character():
+    """`\\<NAME>` denotes one character; a name standing for several is rejected."""
+    with pytest.raises(LexError, match="sequence of 3 characters"):
+        read_escape(r"\<KEYCAP_NUMBER_SIGN>", 0)

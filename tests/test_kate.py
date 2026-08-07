@@ -288,6 +288,31 @@ def test_a_control_character_is_matched_by_an_expression():
     assert root.find(".//DetectChar") is None
 
 
+@pytest.mark.parametrize(
+    "body, pattern",
+    [
+        (r"\uFFFE", r"\x{fffe}"),
+        (r"\uFFFF", r"\x{ffff}"),
+        (r"a|\uFFFE", r"[a\x{fffe}]"),
+    ],
+)
+def test_a_non_character_is_spelled_as_an_escape(body, pattern):
+    """XML 1.0 carries U+FFFE and U+FFFF nowhere, so no rule may write one raw."""
+    text = (
+        "t Lex (\n"
+        "    d File = ( Odd )*\n"
+        f"    d Odd = {body}\n"
+        "      > style(Keyword) class(O) push(t)\n"
+        ")\n"
+        "t Parse (\n"
+        "    > post(Lex) over(t)\n"
+        "    d File = ( Odd )*\n"
+        ")\n"
+    )
+    root = tree_of(text)  # parses, which is the whole point
+    assert root.find(f".//RegExpr[@String='{pattern}']") is not None
+
+
 def test_a_token_matching_nothing_is_left_out(capsys):
     """A zero-width rule colours nothing however often a context tries it."""
     text = "t Parse (\n    d File = ( E )*\n    d E =\n      > style(Keyword)\n)\n"
