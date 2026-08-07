@@ -24,6 +24,7 @@ ENTRY_POINT_GROUP = "pyperg.generators"
 
 # Fallback for a checkout that has not been installed: name -> "module:attribute".
 BUILTIN_GENERATORS: dict[str, str] = {
+    "antlr": "pyperg.generators.antlr:AntlrGenerator",
     "dump": "pyperg.generators.dump:DumpGenerator",
     "kate": "pyperg.generators.kate:KateGenerator",
     "python": "pyperg.generators.python:PythonGenerator",

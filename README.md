@@ -17,6 +17,7 @@ backends read.
 | ---------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | `kate`     | A KDE syntax definition, also read by pandoc. See [Docs/kate-generator.md](Docs/kate-generator.md).                           |
 | `textmate` | A TextMate grammar, packaged as a Visual Studio Code extension. See [Docs/textmate-generator.md](Docs/textmate-generator.md). |
+| `antlr`    | A combined ANTLR 4 grammar, lexer and parser in one `.g4`. See [Docs/antlr-generator.md](Docs/antlr-generator.md).            |
 | `regex`    | One regular expression, starting from the `Match` macro. See [Docs/regex-generator.md](Docs/regex-generator.md).              |
 | `dump`     | The resolved grammar as plain text, for inspection.                                                                           |
 | `python`   | Not written yet.                                                                                                              |

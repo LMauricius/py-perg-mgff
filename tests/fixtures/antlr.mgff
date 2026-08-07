@@ -1,0 +1,57 @@
+# A small expression language, for the ANTLR backend.
+
+> name(Toy)
+
+t Lex (
+
+    d Digit = 0-9
+    d Letter = a-z|A-Z|_
+    d AlNum = a-z|A-Z|0-9|_
+
+    d Number = ( Digit )+ ( . ( Digit )+ )?
+             > class(Number) push(tokens)
+
+    d Ident = Letter ( AlNum )*
+            > class(Ident) push(tokens)
+
+    # length-based: the two-character operator wins over the one-character one
+    d Op = < =
+         | <
+         | +
+         | *
+         > class(Op) push(tokens)
+
+    d LParen = \(
+             > class(\() push(tokens)
+
+    d RParen = \)
+             > class(\)) push(tokens)
+
+    d Comma = ,
+            > class(,) push(tokens)
+
+    # thrown away rather than handed to the parser
+    d Space = ( \_|\t|\n )+
+            > class(Space) push(tokens) skip
+
+    # kept, but on a channel of its own
+    d Comment = # ( Letter|Decimal_Number|\_|\t )*
+              > autoclass push(tokens) push(comments)
+)
+
+t Parse (
+    > post(Lex) over(tokens)
+
+    # direct left recursion: ANTLR reads this as written
+    d Expr = Expr Op Expr
+           / Term
+
+    d Term = Number
+           / Ident
+           / \( Expr \)
+
+    d Argument = Expr
+               > store(value)
+
+    d File = ( Argument ( , Argument )* )?
+)
