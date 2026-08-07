@@ -55,9 +55,9 @@ from ..utils.machine import Context as MachineContext
 from ..utils.machine import ContextRule as MachineRule
 from ..utils.machine import MachineBuilder
 from ..utils.pipeline import (
-    all_productions_of_stages,
+    all_productions_of_chain,
     rewrite_terminals_as_calls,
-    highlight_stages_of,
+    target_stage_chain_of,
 )
 from ..utils.naming import NameAllocator, safe_identifier, snake_case
 from ..utils.regex import regex_of
@@ -96,7 +96,7 @@ class RepositoryBuilder:
         #: The phases, first to last. A terminal of a phase reading a list of
         #: earlier matches is rewritten as a call on the match it names, which
         #: has to happen before anything reads a rule tree.
-        self.stages = highlight_stages_of(model)
+        self.stages = target_stage_chain_of(model)
         for stage in self.stages:
             rewrite_terminals_as_calls(stage)
         self.last_stage = self.stages[-1]
@@ -104,7 +104,7 @@ class RepositoryBuilder:
         self.stage_before_last = self.last_stage.previous
         #: Every phase's productions in one table, for the expressions that
         #: inline a name across a phase boundary.
-        self.all_productions = all_productions_of_stages(self.stages)
+        self.all_productions = all_productions_of_chain(self.stages)
         #: The repository, in the order the entries were built.
         self.entries: dict[str, Pattern] = {}
         #: What a document is matched against before anything has been pushed.

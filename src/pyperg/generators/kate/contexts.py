@@ -55,9 +55,9 @@ from ..utils.machine import Context as MachineContext
 from ..utils.machine import ContextRule as MachineRule
 from ..utils.machine import MachineBuilder
 from ..utils.pipeline import (
-    all_productions_of_stages,
+    all_productions_of_chain,
     rewrite_terminals_as_calls,
-    highlight_stages_of,
+    target_stage_chain_of,
 )
 from ..utils.walk import literal_of, can_match_empty
 from ..utils.xmlwrite import Element
@@ -110,7 +110,7 @@ class ContextBuilder:
         #: The phases, first to last. A terminal of a phase reading a list of
         #: earlier matches is rewritten as a call on the match it names, which
         #: has to happen before anything reads a rule tree.
-        self.stages = highlight_stages_of(model)
+        self.stages = target_stage_chain_of(model)
         for stage in self.stages:
             rewrite_terminals_as_calls(stage)
         self.last_stage = self.stages[-1]
@@ -125,7 +125,7 @@ class ContextBuilder:
             (self.stage_before_last or self.last_stage).target.productions
         )
         #: The rules of the machine's contexts, which reach across every phase.
-        self.machine_rules = RuleBuilder(all_productions_of_stages(self.stages))
+        self.machine_rules = RuleBuilder(all_productions_of_chain(self.stages))
 
     # -- the whole set -----------------------------------------------------
 
@@ -258,4 +258,3 @@ class ContextBuilder:
             )
 
     # -- Parse -------------------------------------------------------------
-

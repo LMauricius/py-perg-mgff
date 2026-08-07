@@ -50,12 +50,12 @@ FINAL_TARGET = "Parse"
 
 
 @dataclass(slots=True)
-class HighlightStage:
+class ChainedTargetStage:
     """One phase of the chain, and what it reads."""
 
     target: Target
     #: The phase before this one, None for the one that reads text.
-    previous: "HighlightStage | None" = None
+    previous: "ChainedTargetStage | None" = None
     #: The list this phase matches over, None when it matches characters.
     over: str | None = None
 
@@ -68,7 +68,7 @@ class HighlightStage:
 # -- building the chain ------------------------------------------------------
 
 
-def highlight_stages_of(model: GrammarModel) -> list[HighlightStage]:
+def target_stage_chain_of(model: GrammarModel) -> list[ChainedTargetStage]:
     """Every phase of the grammar, first to last, ending at `Parse`.
 
     Raises `GeneratorError` on a chain that is no chain: a `post` naming a target
@@ -82,8 +82,8 @@ def highlight_stages_of(model: GrammarModel) -> list[HighlightStage]:
             "`t Name ( … )`, and the last one is called `Parse`"
         )
 
-    order = _targets_in_phase_order(model)
-    stages: list[HighlightStage] = []
+    order = _targets_in_order(model)
+    stages: list[ChainedTargetStage] = []
     for target in order:
         over = setting_value(target.attributes, "over")
         previous = stages[-1] if stages else None
@@ -93,7 +93,7 @@ def highlight_stages_of(model: GrammarModel) -> list[HighlightStage]:
                 "first phase reads the text itself; drop `over`, or give it a "
                 "`post(…)` naming the phase that fills that list"
             )
-        stages.append(HighlightStage(target=target, previous=previous, over=over))
+        stages.append(ChainedTargetStage(target=target, previous=previous, over=over))
 
     if stages[-1].target.name != FINAL_TARGET:
         raise GeneratorError(
@@ -104,7 +104,7 @@ def highlight_stages_of(model: GrammarModel) -> list[HighlightStage]:
     return stages
 
 
-def _targets_in_phase_order(model: GrammarModel) -> list[Target]:
+def _targets_in_order(model: GrammarModel) -> list[Target]:
     """The targets ordered by their `post` attributes, first to last."""
     by_name = {target.name: target for target in model.targets}
     # Who each target follows, and — read the other way — who follows it.
@@ -159,7 +159,9 @@ def _targets_in_phase_order(model: GrammarModel) -> list[Target]:
     return ordered
 
 
-def all_productions_of_stages(stages: list[HighlightStage]) -> dict[str, Production]:
+def all_productions_of_chain(
+    stages: list[ChainedTargetStage],
+) -> dict[str, Production]:
     """Every phase's productions in one table, later phases winning a clash.
 
     A phase reaching back into an earlier one resolves the name there, so the
@@ -175,7 +177,9 @@ def all_productions_of_stages(stages: list[HighlightStage]) -> dict[str, Product
 # -- matching a list of earlier matches --------------------------------------
 
 
-def productions_pushing_to(stage: HighlightStage, list_name: str) -> list[Production]:
+def productions_pushing_to(
+    stage: ChainedTargetStage, list_name: str
+) -> list[Production]:
     """The previous phase's productions that append themselves to a list."""
     if stage.previous is None:
         return []
@@ -186,7 +190,7 @@ def productions_pushing_to(stage: HighlightStage, list_name: str) -> list[Produc
     ]
 
 
-def rewrite_terminals_as_calls(stage: HighlightStage) -> None:
+def rewrite_terminals_as_calls(stage: ChainedTargetStage) -> None:
     """Rewrite a phase's terminals as calls on the matches they name.
 
     Only a phase with `over(…)` has anything to do here. Every terminal of it is
@@ -245,7 +249,9 @@ def rewrite_terminals_as_calls(stage: HighlightStage) -> None:
     _copy_reached_productions(stage, reached)
 
 
-def _productions_by_class(stage: HighlightStage, list_name: str) -> dict[str, list[str]]:
+def _productions_by_class(
+    stage: ChainedTargetStage, list_name: str
+) -> dict[str, list[str]]:
     """Which productions of the previous phase answer to each class."""
     found: dict[str, list[str]] = {}
     for production in productions_pushing_to(stage, list_name):
@@ -254,7 +260,7 @@ def _productions_by_class(stage: HighlightStage, list_name: str) -> dict[str, li
     return found
 
 
-def _copy_reached_productions(stage: HighlightStage, names: set[str]) -> None:
+def _copy_reached_productions(stage: ChainedTargetStage, names: set[str]) -> None:
     """Copy productions of the previous phase into this one, with what they reach."""
     assert stage.previous is not None
     source = stage.previous.target.productions

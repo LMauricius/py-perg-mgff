@@ -12,7 +12,7 @@ from pyperg.diagnostics.errors import GeneratorError
 from pyperg.generators.utils.classes import match_classes_of
 from pyperg.generators.utils.pipeline import (
     rewrite_terminals_as_calls,
-    highlight_stages_of,
+    target_stage_chain_of,
 )
 from pyperg.generators.utils.emit import Emitter
 from pyperg.generators.utils.naming import safe_file_name
@@ -387,7 +387,7 @@ t Parse (
 def highlight_stages_from_text(text: str):
     """The phases of a grammar, with every `over` already resolved."""
     model = resolve(lex_text(text, "<test>"), "<test>", rule_tree_macro_order())
-    stages = highlight_stages_of(model)
+    stages = target_stage_chain_of(model)
     for stage in stages:
         rewrite_terminals_as_calls(stage)
     return model, stages
