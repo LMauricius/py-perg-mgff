@@ -145,16 +145,16 @@ ordinary text.
 
 ### Line roles
 
-| First item | Role                                           |
-| ---------- | ---------------------------------------------- |
-| *(none)*   | Blank line; ignored.                           |
-| `#`        | Comment; the line is ignored.                  |
-| `d`        | Macro definition: `d Head = Body`.             |
-| `/`        | Order-based alternative of the current macro.  |
-| `\|`       | Length-based alternative of the current macro. |
+| First item | Role                                              |
+| ---------- | ------------------------------------------------- |
+| *(none)*   | Blank line; ignored.                              |
+| `#`        | Comment; the line is ignored.                     |
+| `d`        | Macro definition: `d Head = Body`.                |
+| `/`        | Order-based alternative of the current macro.     |
+| `\|`       | Length-based alternative of the current macro.    |
 | `>`        | Attributes of the current macro, or of the scope. |
-| `t`        | Generation target: `t Name ( … )`.             |
-| `p`        | Name prefix: `p Prefix ( … )`.                 |
+| `t`        | Generation target: `t Name ( … )`.                |
+| `p`        | Name prefix: `p Prefix ( … )`.                    |
 
 Any other first item is an error.
 
@@ -258,10 +258,10 @@ typically `Lex` for tokens and `Parse` for grammar.
 Which phase follows which is written on the phases themselves, as attributes of
 the target scope:
 
-| Attribute      | Meaning                                                          |
-| -------------- | ---------------------------------------------------------------- |
-| `post(Other)`  | This phase runs after `Other`.                                   |
-| `over(list)`   | This phase matches the list `list`, rather than the text itself. |
+| Attribute     | Meaning                                                          |
+| ------------- | ---------------------------------------------------------------- |
+| `post(Other)` | This phase runs after `Other`.                                   |
+| `over(list)`  | This phase matches the list `list`, rather than the text itself. |
 
 ```mgff
 t Lex (
@@ -384,6 +384,12 @@ A **part** is one of:
 | Range     | `E-F`, both endpoints a single character, e.g. `0-9` | Any character from `E` to `F` inclusive.  |
 | Category  | the name of a Unicode character category             | Any character belonging to that category. |
 
+The separator is an ordinary character as well, and no escape distinguishes the
+two roles. For example, `\|` is not an escape sequence. Since **no part is empty**,
+we can distinguish `|` used as a choice separator and `|` used as a literal character.
+So `a||` is the set of `a` and `|`, `|` on its own is the set of `|`, and `|-~` is the range from `|` to `~`.
+Text that reads no way at all, such as `||`, is no character set and is read on as a name.
+
 A category is named either by its two-letter abbreviation, as in `Lu` or `Nd`, or
 by its long form, as in `Uppercase_Letter` or `Decimal_Number`. The one-letter
 abbreviations (`L` for every letter, `N` for every number) are not available,
@@ -407,10 +413,10 @@ A grammar that only recognises text needs neither of these. One that produces
 something — a parse tree, a list of tokens, a stream of anything — says where each
 match ends up, and says it on the match itself:
 
-| Attribute      | Meaning                                                        |
-| -------------- | -------------------------------------------------------------- |
-| `store(field)` | The match is assigned to `field` of whatever called it.        |
-| `push(list)`   | The match is appended to the list called `list`.               |
+| Attribute      | Meaning                                                 |
+| -------------- | ------------------------------------------------------- |
+| `store(field)` | The match is assigned to `field` of whatever called it. |
+| `push(list)`   | The match is appended to the list called `list`.        |
 
 ```mgff
 d Expression = ...

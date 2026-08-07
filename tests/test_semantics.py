@@ -1,5 +1,6 @@
 """Part 3: pattern macros, character sets, expansion and the resolved model."""
 
+import re
 from pathlib import Path
 
 import pytest
@@ -11,6 +12,7 @@ from pyperg.mgff.lexing.cst import render_item, signature_of
 from pyperg.mgff.lexing.lexer import lex_text
 from pyperg.mgff.common.order import rule_tree_macro_order
 from pyperg.mgff.common.categories import is_category_name
+from pyperg.mgff.common.characters import CHARACTER_PATTERN, CHARACTER_SET_PATTERN
 from pyperg.mgff.common.charset import parse_character_set
 from pyperg.mgff.common.rules import Choice, MacroCall, Reference, Repetition, Sequence
 from pyperg.mgff.semantics.model import resolve
@@ -50,6 +52,44 @@ def test_a_character_set_reads_its_parts(text, kinds):
 @pytest.mark.parametrize("text", ["Digit", "abc", "a-", "Nonsense_Category", ""])
 def test_text_that_is_no_character_set_is_rejected(text):
     assert parse_character_set(text) is None
+
+
+# The separator is a character too, and no escape says which role a `|` plays.
+# No part being empty is what decides, so each of these has one reading only.
+@pytest.mark.parametrize(
+    "text, parts",
+    [
+        ("|", [("character", "|", "")]),
+        ("a||", [("character", "a", ""), ("character", "|", "")]),
+        ("||a", [("character", "|", ""), ("character", "a", "")]),
+        ("a|||b", [("character", "a", ""), ("character", "|", ""), ("character", "b", "")]),
+        ("|-~", [("range", "|", "~")]),
+        ("!-|", [("range", "!", "|")]),
+    ],
+)
+def test_the_separator_is_a_character_where_no_part_may_be_empty(text, parts):
+    characters = parse_character_set(text)
+    assert characters is not None
+    assert [(p.kind, p.value, p.high) for p in characters.parts] == parts
+
+
+@pytest.mark.parametrize("text", ["||", "|a-", "a|"])
+def test_text_leaving_an_empty_part_is_no_character_set(text):
+    assert parse_character_set(text) is None
+
+
+@pytest.mark.parametrize("text", ["a", "|", "0-9", "|-~", "Lu", "9-0"])
+def test_the_character_shape_matches_what_one_part_may_be(text):
+    # The shapes are matched against a signature and must accept exactly the
+    # text the reader accepts, save for `9-0`, which the reader declines.
+    assert re.fullmatch(CHARACTER_PATTERN, text)
+    assert not re.fullmatch(CHARACTER_SET_PATTERN, text)
+
+
+@pytest.mark.parametrize("text", ["a|b", "a||", "||a", "a-z|A-Z|_", "Lu|Decimal_Number"])
+def test_the_character_set_shape_matches_sets_of_several_parts(text):
+    assert re.fullmatch(CHARACTER_SET_PATTERN, text)
+    assert not re.fullmatch(CHARACTER_PATTERN, text)
 
 
 def test_one_letter_abbreviations_are_not_category_names():

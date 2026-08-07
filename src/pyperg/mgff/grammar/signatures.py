@@ -43,7 +43,10 @@ def extracts_nothing(item: Item, match: re.Match[str]) -> dict[str, object]:
 
 #: One character of a name: escaped, or a plain character that is no bracket.
 #: A signature escapes its brackets, so an unescaped one is always a group.
-NAME_CHARACTER = r"(?:\\.|[^\\()])"
+#: The escapes it writes are exactly `SIGNATURE_ESCAPES` and no others — a
+#: backslash before anything else cannot occur, and matching it would let a
+#: pattern accept text `signature_of` never spells.
+NAME_CHARACTER = r"(?:\\[\\()]|[^\\()])"
 
 #: A name carrying no groups, e.g. `Digit`, and one carrying at least one, e.g.
 #: `sep()by()`. Between them they cover every item that is a plain call.

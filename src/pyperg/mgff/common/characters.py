@@ -19,7 +19,7 @@ import re
 
 from ..grammar.macros import MacroDefinition
 from ..grammar.shapes import MacroShape
-from ..grammar.signatures import make_shape
+from ..grammar.signatures import NAME_CHARACTER, make_shape
 from ..lexing.cst import Item
 from ..semantics.context import CallContext
 from .rules import MacroCall, Rule
@@ -28,10 +28,11 @@ from .charset import CharacterSet, parse_character_set
 
 # -- the patterns -----------------------------------------------------------
 
-#: One character as a signature spells it: escaped, or a plain character that is
-#: neither a bracket nor the separator. Brackets are always escaped in a
-#: signature, so an unescaped one can only be a group.
-_CHARACTER = r"(?:\\.|[^\\()|])"
+#: One character as a signature spells it — `NAME_CHARACTER` is that alphabet,
+#: and is used rather than restated so the two cannot drift apart. The
+#: separator is included: `|` is an ordinary character where a part can be read
+#: from it, and there is no escape that would say so instead.
+_CHARACTER = NAME_CHARACTER
 
 #: A category, longest name first, so `Lu` cannot win over `Lu…` — the names
 #: come from the category table, which is the only place they are written down.
@@ -42,10 +43,13 @@ _CATEGORY = "|".join(
 #: One part: a range, a category, or a single character, tried in that order.
 _PART = rf"(?:{_CHARACTER}-{_CHARACTER}|{_CATEGORY}|{_CHARACTER})"
 
-#: A set of two or more parts, and a set of exactly one. The lone separator is
-#: the separator character itself rather than an empty set, so it is spelled out.
+#: A set of two or more parts, and a set of exactly one. Both alternatives of
+#: `|` — separator here, character inside a part — are open at once, and the
+#: engine's backtracking settles it exactly as `parse_character_set` does: a
+#: reading leaving no part empty, or no match at all. So `a||` is a set of two
+#: and a lone `|` is a set of one, with nothing spelled out for either.
 CHARACTER_SET_PATTERN = rf"{_PART}(?:\|{_PART})+"
-CHARACTER_PATTERN = rf"(?:{_PART}|\|)"
+CHARACTER_PATTERN = _PART
 
 
 # -- what each call carries -------------------------------------------------
