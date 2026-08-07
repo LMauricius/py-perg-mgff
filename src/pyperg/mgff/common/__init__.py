@@ -36,10 +36,15 @@ from .characters import (
     CHARACTER_SET,
     CHARACTER_SET_SHAPE,
     CHARACTER_SHAPE,
-    character_set_of,
+    character_set_matched_by,
 )
-from .charset import CharacterPart, CharacterSet, parse_character_set, parse_part
-from .categories import category_members, is_category_name
+from .charset import (
+    CharacterSet,
+    CharacterSetPart,
+    parse_character_set,
+    parse_character_set_part,
+)
+from .categories import categories_covered_by, is_category_name
 from .grouping import (
     CHOICE,
     CHOICE_SHAPE,
@@ -48,7 +53,7 @@ from .grouping import (
     SUBGROUP,
     SUBGROUP_SHAPE,
 )
-from .order import NAME, NAME_WITH_ARGUMENTS, rule_tree_macros
+from .order import NAME, NAME_WITH_ARGUMENTS, rule_tree_macro_order
 
 __all__ = [
     "CHARACTER",
@@ -64,12 +69,12 @@ __all__ = [
     "REPETITION_SHAPE",
     "SUBGROUP",
     "SUBGROUP_SHAPE",
-    "CharacterPart",
+    "CharacterSetPart",
     "CharacterSet",
-    "category_members",
-    "character_set_of",
+    "categories_covered_by",
+    "character_set_matched_by",
     "is_category_name",
     "parse_character_set",
-    "parse_part",
-    "rule_tree_macros",
+    "parse_character_set_part",
+    "rule_tree_macro_order",
 ]

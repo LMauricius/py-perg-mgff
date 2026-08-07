@@ -49,16 +49,26 @@ from ...diagnostics.errors import GeneratorError
 from ...mgff.common.rules import Reference, Rule
 from ...mgff.semantics.model import GrammarModel, Production, Target
 from ..utils.styles import styles_of
-from ..utils.highlight import token_order
+from ..utils.highlight import token_names_in_order
 from ..utils.machine import POP, STAY
 from ..utils.machine import Context as MachineContext
 from ..utils.machine import ContextRule as MachineRule
 from ..utils.machine import MachineBuilder
-from ..utils.pipeline import productions_of, resolve_over, stages_of
+from ..utils.pipeline import (
+    all_productions_of_stages,
+    rewrite_terminals_as_calls,
+    highlight_stages_of,
+)
 from ..utils.naming import NameAllocator, safe_identifier, snake_case
 from ..utils.regex import regex_of
 from ..utils.walk import single_character
-from .patterns import Pattern, include, match_pattern, matches_nothing, regex_for
+from .patterns import (
+    Pattern,
+    include,
+    match_pattern,
+    matches_nothing,
+    regex_for_production,
+)
 from .scopes import punctuation_scope, region_scope, scope_for
 
 #: The repository entries this backend always builds.
@@ -86,25 +96,25 @@ class RepositoryBuilder:
         #: The phases, first to last. A terminal of a phase reading a list of
         #: earlier matches is rewritten as a call on the match it names, which
         #: has to happen before anything reads a rule tree.
-        self.stages = stages_of(model)
+        self.stages = highlight_stages_of(model)
         for stage in self.stages:
-            resolve_over(stage)
-        self.last = self.stages[-1]
+            rewrite_terminals_as_calls(stage)
+        self.last_stage = self.stages[-1]
         #: The phase whose order decides which match wins where several could.
-        self.before = self.last.previous
+        self.stage_before_last = self.last_stage.previous
         #: Every phase's productions in one table, for the expressions that
         #: inline a name across a phase boundary.
-        self.merged = productions_of(self.stages)
+        self.all_productions = all_productions_of_stages(self.stages)
         #: The repository, in the order the entries were built.
         self.entries: dict[str, Pattern] = {}
         #: What a document is matched against before anything has been pushed.
-        self.top: list[Pattern] = []
+        self.top_level_patterns: list[Pattern] = []
         self.names = NameAllocator({GRAMMAR_ENTRY, TOKENS_ENTRY})
         #: The pairs an editor folds and auto-closes, from the spans that nest.
-        self.pairs: list[tuple[str, str]] = []
+        self.bracket_pairs_found: list[tuple[str, str]] = []
         #: Every context of the machine, and the entry each push was given.
         self.contexts: dict[str, MachineContext] = {}
-        self.pushed: dict[str, str] = {}
+        self.span_entry_names: dict[str, str] = {}
 
     # -- the whole grammar -------------------------------------------------
 
@@ -114,15 +124,15 @@ class RepositoryBuilder:
         A grammar of several phases is spelled from the machine; one of a single
         phase is the flat list its `File` names, in that order.
         """
-        if self.before is not None:
+        if self.stage_before_last is not None:
             self.build_machine()
         else:
-            self.build_tokens(self.last.target)
-            self.top = [include(TOKENS_ENTRY)]
+            self.build_tokens(self.last_stage.target)
+            self.top_level_patterns = [include(TOKENS_ENTRY)]
 
     def top_patterns(self) -> list[Pattern]:
         """What a document is matched against before anything has been pushed."""
-        return self.top
+        return self.top_level_patterns
 
     def repository(self) -> dict[str, Pattern]:
         """Every entry, in the order they were built."""
@@ -130,31 +140,31 @@ class RepositoryBuilder:
 
     def bracket_pairs(self) -> list[tuple[str, str]]:
         """The character pairs an editor should fold and auto-close."""
-        return self.pairs
+        return self.bracket_pairs_found
 
     # -- the machine -------------------------------------------------------
 
     def build_machine(self) -> None:
         """Spell the machine: the starting context on top, a span per push."""
-        assert self.before is not None
+        assert self.stage_before_last is not None
         machine = MachineBuilder(
-            self.last.target, token_order(self.before.target)
+            self.last_stage.target, token_names_in_order(self.stage_before_last.target)
         ).build()
         self.contexts = machine.contexts
 
         start = machine.contexts.get(machine.start)
         if start is None:
             raise GeneratorError(
-                f"target {self.last.target.name!r} describes no structure to highlight"
+                f"target {self.last_stage.target.name!r} describes no structure to highlight"
             )
         # `grammar` is filled in place, so it is written out ahead of the spans
         # it names, and a span reaching back to it finds it already there.
         patterns: list[Pattern] = []
         self.entries[GRAMMAR_ENTRY] = {"patterns": patterns}
-        self.top = [include(GRAMMAR_ENTRY)]
-        patterns.extend(self.patterns_of(start))
+        self.top_level_patterns = [include(GRAMMAR_ENTRY)]
+        patterns.extend(self.patterns_for_context(start))
 
-    def patterns_of(self, context: MachineContext) -> list[Pattern]:
+    def patterns_for_context(self, context: MachineContext) -> list[Pattern]:
         """A context's rules as patterns: a span to include, or a match.
 
         A rule that only pops is left out — it is the `end` of the entry this
@@ -166,16 +176,16 @@ class RepositoryBuilder:
             if rule.match.look_ahead or (rule.pop and not rule.push):
                 continue
             if rule.push:
-                entry = self.span_entry(rule)
+                entry = self.span_entry_name_for(rule)
                 if entry is not None:
                     patterns.append(include(entry))
             else:
-                pattern = self.match_of(rule)
+                pattern = self.pattern_for_match_rule(rule)
                 if pattern is not None:
                     patterns.append(pattern)
         return patterns
 
-    def span_entry(self, rule: MachineRule) -> str | None:
+    def span_entry_name_for(self, rule: MachineRule) -> str | None:
         """The entry a push rule opens, built once per opening.
 
         A context entered by several characters — an alternative line opens with
@@ -185,17 +195,17 @@ class RepositoryBuilder:
         context = self.contexts.get(rule.push or "")
         if context is None:
             return None
-        opening = regex_for_rule(rule, self.lookup)
+        opening = regex_for_rule(rule, self.find_production)
         if opening is None:
             return None
         key = f"{rule.push}:{opening}"
-        if key in self.pushed:
-            return self.pushed[key]
+        if key in self.span_entry_names:
+            return self.span_entry_names[key]
 
         name = self.names.allocate(
             snake_case(safe_identifier(context.origin or context.name)) or "span"
         )
-        self.pushed[key] = name
+        self.span_entry_names[key] = name
         entry: Pattern = {}
         self.entries[name] = entry
         entry.update(self.span_pattern(context, rule, opening))
@@ -227,7 +237,7 @@ class RepositoryBuilder:
 
         closing = self.closing_rule(context)
         if closing is not None:
-            closing_regex = regex_for_rule(closing, self.lookup) or "$"
+            closing_regex = regex_for_rule(closing, self.find_production) or "$"
             pattern["end"] = closing_regex
             closing_scope = scope_for(closing.styles, self.language)
             pattern["endCaptures"] = {
@@ -236,14 +246,16 @@ class RepositoryBuilder:
                     or punctuation_scope(context.origin, self.language, "end")
                 }
             }
-            self.record_pair(opening, closing)
+            self.record_bracket_pair(opening, closing)
         elif context.line_end == POP or context.line_end == STAY:
             # A role of a single line ends where its line does.
             pattern["end"] = "$"
         else:
-            pattern["end"] = self.carry_expression(context)
+            pattern["end"] = self.end_expression_for_carried_role(context)
 
-        pattern["patterns"] = self.patterns_of(context) + self.chained_patterns(context)
+        pattern["patterns"] = self.patterns_for_context(
+            context
+        ) + self.patterns_of_chained_lines(context)
         return pattern
 
     def closing_rule(self, context: MachineContext) -> MachineRule | None:
@@ -253,17 +265,17 @@ class RepositoryBuilder:
                 return rule
         return None
 
-    def record_pair(self, opening: str, closing: MachineRule) -> None:
+    def record_bracket_pair(self, opening: str, closing: MachineRule) -> None:
         """Remember a fixed pair, which the editor folds and auto-closes."""
         open_char = opening[-1] if len(opening) <= 2 else ""
         close_char = single_character(closing.match.rule) or ""
         pair = (open_char, close_char)
-        if open_char and close_char and pair not in self.pairs:
-            self.pairs.append(pair)
+        if open_char and close_char and pair not in self.bracket_pairs_found:
+            self.bracket_pairs_found.append(pair)
 
     # -- chains ------------------------------------------------------------
 
-    def chain_of(self, context: MachineContext) -> list[MachineContext]:
+    def chained_line_contexts(self, context: MachineContext) -> list[MachineContext]:
         """The line contexts a role carries on into, in order.
 
         A definition's alternative lines and attribute lines are states of their
@@ -274,7 +286,7 @@ class RepositoryBuilder:
         """
         found: list[MachineContext] = []
         name = context.line_end
-        while name not in (STAY, POP) and name not in [c.name for c in found]:
+        while name not in (STAY, POP) and name not in [ctx.name for ctx in found]:
             following = self.contexts.get(name)
             if following is None or following is context:
                 break
@@ -282,14 +294,14 @@ class RepositoryBuilder:
             name = following.line_end
         return found
 
-    def chained_patterns(self, context: MachineContext) -> list[Pattern]:
+    def patterns_of_chained_lines(self, context: MachineContext) -> list[Pattern]:
         """What the lines a role carries on into may hold."""
         patterns: list[Pattern] = []
-        for following in self.chain_of(context):
-            patterns.extend(self.patterns_of(following))
+        for following in self.chained_line_contexts(context):
+            patterns.extend(self.patterns_for_context(following))
         return patterns
 
-    def carry_expression(self, context: MachineContext) -> str:
+    def end_expression_for_carried_role(self, context: MachineContext) -> str:
         """Where a role that reaches past its first line stops.
 
         Built from the rules of the chained contexts: their openings are exactly
@@ -302,11 +314,11 @@ class RepositoryBuilder:
         have closed, which is the behaviour the machine describes.
         """
         openings: list[str] = []
-        for following in self.chain_of(context):
+        for following in self.chained_line_contexts(context):
             for rule in following.rules:
                 if rule.match.look_ahead:
                     continue
-                found = regex_for_rule(rule, self.lookup)
+                found = regex_for_rule(rule, self.find_production)
                 if found is not None and found not in openings:
                     openings.append(found)
         if not openings:
@@ -323,19 +335,19 @@ class RepositoryBuilder:
         """
         includes: list[Pattern] = []
         self.entries[TOKENS_ENTRY] = {"patterns": includes}
-        for name in token_order(target):
-            entry = self.entry_for_token(target.productions[name])
+        for name in token_names_in_order(target):
+            entry = self.build_token_entry(target.productions[name])
             if entry is not None:
                 includes.append(include(entry))
 
-    def entry_for_token(self, production: Production) -> str | None:
+    def build_token_entry(self, production: Production) -> str | None:
         """One token production as its own `match` entry; returns the entry name.
 
         A production whose expression could match nothing is skipped with a note
         on standard error: a zero-width pattern never highlights anything, and
         leaving it in would only slow the tokeniser down.
         """
-        if matches_nothing(production, self.lookup):
+        if matches_nothing(production, self.find_production):
             print(
                 f"pyperg: textmate: token {production.name!r} can match the empty "
                 "string, so it is left out; a zero-width pattern highlights nothing.",
@@ -344,16 +356,16 @@ class RepositoryBuilder:
             return None
         name = self.entry_name(production)
         scope = scope_for(styles_of(production), self.language)
-        self.entries[name] = match_pattern(production, scope, self.lookup)
+        self.entries[name] = match_pattern(production, scope, self.find_production)
         return name
 
     # -- matching ----------------------------------------------------------
 
-    def lookup(self, name: str) -> Production | None:
+    def find_production(self, name: str) -> Production | None:
         """A production of any phase, for the expressions that inline it."""
-        return self.merged.get(name)
+        return self.all_productions.get(name)
 
-    def match_of(self, rule: MachineRule) -> Pattern | None:
+    def pattern_for_match_rule(self, rule: MachineRule) -> Pattern | None:
         """One machine rule as a pattern: an entry to include, or a match.
 
         A rule that is nothing but a call becomes **an entry of its own**, named
@@ -366,31 +378,31 @@ class RepositoryBuilder:
         """
         called = self.called_production(rule)
         if called is not None:
-            name = self.token_entry(called, rule)
+            name = self.token_entry_name(called, rule)
             if name is not None:
                 return include(name)
             return None
-        expression = regex_for_rule(rule, self.lookup)
+        expression = regex_for_rule(rule, self.find_production)
         if expression is None:
             return None
-        return _match(expression, scope_for(rule.styles, self.language))
+        return _scoped_match(expression, scope_for(rule.styles, self.language))
 
     def called_production(self, rule: MachineRule) -> Production | None:
         """The production a plain match rule calls, when that is all it does."""
         if rule.push or rule.pop or rule.match.look_ahead:
             return None
         if isinstance(rule.match.rule, Reference):
-            return self.lookup(rule.match.rule.name)
+            return self.find_production(rule.match.rule.name)
         return None
 
-    def token_entry(self, production: Production, rule: MachineRule) -> str | None:
+    def token_entry_name(self, production: Production, rule: MachineRule) -> str | None:
         """The entry one token is filed under, built once and included after.
 
         Keyed by the styles as well as the macro: the same name is a name
         wherever it is written, but on an attribute line it is an attribute, and
         the two want scopes of their own.
         """
-        expression = regex_for_rule(rule, self.lookup)
+        expression = regex_for_rule(rule, self.find_production)
         if expression is None:
             return None
         # Keyed by the scope rather than the styles: `Normal` and no style at
@@ -398,7 +410,7 @@ class RepositoryBuilder:
         scope = scope_for(rule.styles, self.language)
         name = self.entry_name(production, scope)
         if name not in self.entries:
-            self.entries[name] = _match(expression, scope)
+            self.entries[name] = _scoped_match(expression, scope)
         return name
 
     # -- naming ------------------------------------------------------------
@@ -417,7 +429,7 @@ class RepositoryBuilder:
         )
 
 
-def _match(expression: str, scope: str | None) -> Pattern:
+def _scoped_match(expression: str, scope: str | None) -> Pattern:
     """A `match` pattern, scoped when its styles name a scope at all."""
     pattern: Pattern = {}
     if scope is not None:
@@ -426,7 +438,7 @@ def _match(expression: str, scope: str | None) -> Pattern:
     return pattern
 
 
-def regex_for_rule(rule: MachineRule, lookup) -> str | None:
+def regex_for_rule(rule: MachineRule, find_production) -> str | None:
     """The expression a machine rule matches with.
 
     A plain call is spelled from the production it names, which is what keeps
@@ -436,15 +448,15 @@ def regex_for_rule(rule: MachineRule, lookup) -> str | None:
     node: Rule = rule.match.rule
     found: str | None
     if isinstance(node, Reference):
-        production = lookup(node.name)
+        production = find_production(node.name)
         if production is None:
             return None
         try:
-            found = regex_for(production, lookup)
+            found = regex_for_production(production, find_production)
         except GeneratorError:
             return None
     else:
-        found = regex_of(node, lookup)
+        found = regex_of(node, find_production)
     if found is not None and rule.match.word_boundary:
         # A marker spelled as a letter must not open a line inside a word.
         found = rf"\b{found}\b"

@@ -25,7 +25,7 @@ from ...diagnostics.errors import GeneratorError
 from ...mgff.semantics.model import Production
 
 
-def classes_of(production: Production) -> list[str]:
+def match_classes_of(production: Production) -> list[str]:
     """The classes a production's match carries, empty when it carries none.
 
     `class(…)` names them outright; `autoclass` takes the macro's own name,

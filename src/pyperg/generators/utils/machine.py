@@ -20,7 +20,7 @@ marker is a keyword only where a line may begin with one, a subgroup holds no
 definitions because nothing spelling one is reachable from it, and a comment
 stays a comment across the lines its group spans.
 
-**A state is a place a line may begin.** `split` reads a rule tree as "what may
+**A state is a place a line may begin.** `split_at_line_breaks` reads a rule tree as "what may
 appear on this line" and "what is left for the next one", the states are the
 distinct leftovers, and a line break moves between them. That is what carries a
 definition on to its alternative lines without a lookahead the grammar cannot
@@ -40,13 +40,26 @@ from dataclasses import dataclass, field
 from ...diagnostics.errors import GeneratorError
 from ...diagnostics.span import Position, Span
 from ...mgff.common.characters import CHARACTER, CHARACTER_SET
-from ...mgff.common.rules import Choice, MacroCall, Reference, Repetition, Rule, Sequence
+from ...mgff.common.rules import (
+    Choice,
+    MacroCall,
+    Reference,
+    Repetition,
+    Rule,
+    Sequence,
+)
 from ...mgff.lexing.cst import Item, Text
 from ...mgff.semantics.model import Production, Target
 from .styles import styles_of
 from .naming import NameAllocator, safe_identifier
 from .regex import regex_of
-from .walk import flatten, fuse_literals, nullable, single_character, walk
+from .walk import (
+    can_match_empty,
+    merge_adjacent_literals,
+    single_character,
+    top_level_parts,
+    walk_rule_tree,
+)
 
 #: The macro a target starts at.
 START_PRODUCTION = "File"
@@ -139,26 +152,26 @@ def is_newline(node: Rule) -> bool:
     return single_character(node) == "\n"
 
 
-def key_of(node: Rule | None) -> str:
+def state_key_of(node: Rule | None) -> str:
     """A stable key for a rule tree, so two states that are alike are one state."""
     return "" if node is None else repr(node)
 
 
-def parts_of(node: Rule) -> list[Rule]:
+def merged_top_level_parts(node: Rule) -> list[Rule]:
     """A node's top-level parts, sequences merged and literal runs fused."""
-    return fuse_literals(flatten(node))
+    return merge_adjacent_literals(top_level_parts(node))
 
 
 # -- splitting a rule at its line breaks -----------------------------------
 
 @dataclass(slots=True)
-class Line:
+class LineSplit:
     """What a rule contributes to the line it starts on.
 
-    `parts` is everything that may be matched before the line ends — a set, not
+    `matched_on_this_line` is everything that may be matched before the line ends — a set, not
     a sequence, because a context tries its rules at every position and does not
-    care in which order they were reached. `leftovers` is what each line break
-    inside the rule leaves for the next line, and `finishes` says whether the
+    care in which order they were reached. `left_for_next_line` is what each line break
+    inside the rule leaves for the next line, and `may_end_before_line_break` says whether the
     rule may be done before any line break, which is what lets the context that
     reached it carry on.
 
@@ -167,12 +180,12 @@ class Line:
     be divided between lines.
     """
 
-    parts: list[Rule] = field(default_factory=list)
-    leftovers: list[Rule] = field(default_factory=list)
-    finishes: bool = True
+    matched_on_this_line: list[Rule] = field(default_factory=list)
+    left_for_next_line: list[Rule] = field(default_factory=list)
+    may_end_before_line_break: bool = True
 
 
-class Splitter:
+class LineSplitter:
     """Reads rule trees as lines: what appears now, and what is left over.
 
     A reference is followed only when the production it names is transparent —
@@ -180,91 +193,104 @@ class Splitter:
     are cached, since a grammar reaches the same subtree many times.
     """
 
-    def __init__(self, classify) -> None:
-        self.classify = classify
-        self.cache: dict[str, Line] = {}
+    def __init__(self, classifier) -> None:
+        self.classifier = classifier
+        self.cache: dict[str, LineSplit] = {}
 
-    def read(self, node: Rule) -> Line:
+    def split_at_line_breaks(self, node: Rule) -> LineSplit:
         """What a node puts on this line, and what it leaves for the next."""
-        key = key_of(node)
+        key = state_key_of(node)
         found = self.cache.get(key)
         if found is None:
-            self.cache[key] = found = self._read(node, seen=frozenset())
+            self.cache[key] = found = self._split(node, seen=frozenset())
         return found
 
     # -- the walk ----------------------------------------------------------
 
-    def _read(self, node: Rule, seen: frozenset[str]) -> Line:
+    def _split(self, node: Rule, seen: frozenset[str]) -> LineSplit:
         if is_newline(node):
             # The line ends here, and nothing of this node is left over.
-            return Line(leftovers=[EMPTY], finishes=False)
-        if not self.crosses_line(node) and self.atomic(node):
-            return Line(parts=[node])
+            return LineSplit(
+                left_for_next_line=[EMPTY], may_end_before_line_break=False
+            )
+        if not self.crosses_line(node) and self.matchable_as_one_rule(node):
+            return LineSplit(matched_on_this_line=[node])
         if isinstance(node, Sequence):
-            return self._read_sequence(list(node.items), seen)
+            return self._split_sequence(list(node.items), seen)
         if isinstance(node, Choice):
-            return self._merge([self._read(option, seen) for option in node.options])
+            return self._union_of_splits(
+                [self._split(option, seen) for option in node.options]
+            )
         if isinstance(node, Repetition):
-            return self._read_repetition(node, seen)
+            return self._split_repetition(node, seen)
         if isinstance(node, Reference):
-            return self._read_reference(node, seen)
-        return Line(parts=[node])
+            return self._split_reference(node, seen)
+        return LineSplit(matched_on_this_line=[node])
 
-    def _read_sequence(self, items: list[Rule], seen: frozenset[str]) -> Line:
+    def _split_sequence(self, items: list[Rule], seen: frozenset[str]) -> LineSplit:
         """The head's line, plus the tail's when the head may end on this one."""
         if not items:
-            return Line()
+            return LineSplit()
         head, rest = items[0], items[1:]
-        first = self._read(head, seen)
+        first = self._split(head, seen)
         # Whatever the head left over is followed by the rest of the sequence.
-        line = Line(
-            parts=list(first.parts),
-            leftovers=[_sequence([left, *rest]) for left in first.leftovers],
-            finishes=False,
+        line = LineSplit(
+            matched_on_this_line=list(first.matched_on_this_line),
+            left_for_next_line=[
+                _sequence_rule([left, *rest]) for left in first.left_for_next_line
+            ],
+            may_end_before_line_break=False,
         )
-        if first.finishes:
-            following = self._read_sequence(rest, seen)
-            _extend(line.parts, following.parts)
-            _extend(line.leftovers, following.leftovers)
-            line.finishes = following.finishes
+        if first.may_end_before_line_break:
+            following = self._split_sequence(rest, seen)
+            _add_unseen(line.matched_on_this_line, following.matched_on_this_line)
+            _add_unseen(line.left_for_next_line, following.left_for_next_line)
+            line.may_end_before_line_break = following.may_end_before_line_break
         return line
 
-    def _read_repetition(self, node: Repetition, seen: frozenset[str]) -> Line:
+    def _split_repetition(self, node: Repetition, seen: frozenset[str]) -> LineSplit:
         """A repetition may stop before this line ends, or carry on past it.
 
         A further iteration adds the parts this one already did, so the union is
         the same; only the leftovers gain the repetition itself.
         """
-        body = self._read(node.body, seen)
-        return Line(
-            parts=list(body.parts),
-            leftovers=[_sequence([left, _looping(node)]) for left in body.leftovers],
-            finishes=node.minimum == 0 or body.finishes,
+        body = self._split(node.body, seen)
+        return LineSplit(
+            matched_on_this_line=list(body.matched_on_this_line),
+            left_for_next_line=[
+                _sequence_rule([left, _with_minimum_dropped(node)])
+                for left in body.left_for_next_line
+            ],
+            may_end_before_line_break=node.minimum == 0 or body.may_end_before_line_break,
         )
 
-    def _read_reference(self, node: Reference, seen: frozenset[str]) -> Line:
+    def _split_reference(self, node: Reference, seen: frozenset[str]) -> LineSplit:
         """A transparent production is walked into; anything else is a part."""
-        production = self.classify.production(node.name)
-        if production is None or self.classify.of(production) != INLINE:
-            return Line(parts=[node])
+        production = self.classifier.production_named(node.name)
+        if production is None or self.classifier.role_of(production) != INLINE:
+            return LineSplit(matched_on_this_line=[node])
         if node.name in seen:
             # A cycle through transparent macros: whatever it would contribute
             # is already being collected by the walk that reached it.
-            return Line()
-        return self._read(production.rule, seen | {node.name})
+            return LineSplit()
+        return self._split(production.rule, seen | {node.name})
 
     # -- helpers -----------------------------------------------------------
 
-    def _merge(self, lines: list[Line]) -> Line:
+    def _union_of_splits(self, lines: list[LineSplit]) -> LineSplit:
         """The union of several readings, as a choice between them is."""
-        merged = Line(finishes=False)
+        merged = LineSplit(may_end_before_line_break=False)
         for line in lines:
-            _extend(merged.parts, line.parts)
-            _extend(merged.leftovers, line.leftovers)
-            merged.finishes = merged.finishes or line.finishes
+            _add_unseen(merged.matched_on_this_line, line.matched_on_this_line)
+            _add_unseen(merged.left_for_next_line, line.left_for_next_line)
+            merged.may_end_before_line_break = (
+                merged.may_end_before_line_break or line.may_end_before_line_break
+            )
         return merged
 
-    def atomic(self, node: Rule, seen: frozenset[str] = frozenset()) -> bool:
+    def matchable_as_one_rule(
+        self, node: Rule, seen: frozenset[str] = frozenset()
+    ) -> bool:
         """Whether a node is one rule's worth of matching.
 
         A subtree naming no span and no token of its own is matched by a single
@@ -275,31 +301,31 @@ class Splitter:
         not recurse, so the answer there is no — the same answer `is_regular`
         gives, and what stops the walk on a recursive grammar.
         """
-        for found in walk(node):
+        for found in walk_rule_tree(node):
             if isinstance(found, Reference):
                 if found.name in seen:
                     return False
-                production = self.classify.production(found.name)
-                if production is None or self.classify.of(production) != INLINE:
+                production = self.classifier.production_named(found.name)
+                if production is None or self.classifier.role_of(production) != INLINE:
                     return False
-                if not self.atomic(production.rule, seen | {found.name}):
+                if not self.matchable_as_one_rule(production.rule, seen | {found.name}):
                     return False
         return True
 
     def crosses_line(self, node: Rule) -> bool:
         """Whether a node can reach a newline; the classifier knows how to tell."""
-        return self.classify.crosses_line(node)
+        return self.classifier.crosses_line(node)
 
-def _extend(into: list[Rule], more: list[Rule]) -> None:
+def _add_unseen(into: list[Rule], more: list[Rule]) -> None:
     """Add what is not there yet, keeping the order things were found in."""
-    known = {key_of(node) for node in into}
+    known = {state_key_of(node) for node in into}
     for node in more:
-        if key_of(node) not in known:
-            known.add(key_of(node))
+        if state_key_of(node) not in known:
+            known.add(state_key_of(node))
             into.append(node)
 
 
-def _sequence(items: list[Rule]) -> Rule:
+def _sequence_rule(items: list[Rule]) -> Rule:
     """A sequence of the items, unwrapped when there is only one."""
     items = [item for item in items if item is not EMPTY and item != EMPTY]
     if not items:
@@ -307,7 +333,7 @@ def _sequence(items: list[Rule]) -> Rule:
     return items[0] if len(items) == 1 else Sequence(items)
 
 
-def _looping(node: Repetition) -> Repetition:
+def _with_minimum_dropped(node: Repetition) -> Repetition:
     """The same repetition, with any minimum already satisfied."""
     return Repetition(node.body, 0, node.maximum, node.marker)
 
@@ -319,7 +345,7 @@ def _looping(node: Repetition) -> Repetition:
 #: A marker written as a macro of its own — `d DefMarker = d > style(Keyword)` —
 #: keeps its style here while the context it opens keeps another, which is how a
 #: keyword opens a span whose body is not a keyword.
-Terminal = tuple[str, list[str]]
+FixedCharacter = tuple[str, list[str]]
 
 
 class Classifier:
@@ -336,49 +362,51 @@ class Classifier:
 
     def __init__(self, target: Target) -> None:
         self.target = target
-        self.answers: dict[str, str] = {}
+        self.roles: dict[str, str] = {}
         #: True while the fixpoint is being computed, so the recomputation reads
         #: the round's answers instead of starting a round of its own.
-        self.settling = False
+        self.resolving_roles = False
 
-    def production(self, name: str) -> Production | None:
+    def production_named(self, name: str) -> Production | None:
         """One production of the target by name."""
         return self.target.productions.get(name)
 
-    def of(self, production: Production) -> str:
+    def role_of(self, production: Production) -> str:
         """Whether a production is a span, a token or transparent."""
-        if production.name not in self.answers and not self.settling:
-            self._settle()
-        return self.answers.get(production.name, INLINE)
+        if production.name not in self.roles and not self.resolving_roles:
+            self._resolve_pending_roles()
+        return self.roles.get(production.name, INLINE)
 
-    def _settle(self) -> None:
+    def _resolve_pending_roles(self) -> None:
         """Classify every production, iterating until the answers stop moving.
 
         The rounds are bounded by the number of productions, which no chain of
         answers depending on answers can outrun, and the last round is the one
         that finds nothing left to change.
         """
-        self.settling = True
+        self.resolving_roles = True
         try:
-            self.answers = {name: INLINE for name in self.target.productions}
+            self.roles = {name: INLINE for name in self.target.productions}
             for _ in range(len(self.target.productions) + 1):
                 found = {
-                    name: self._classify(production)
+                    name: self._role_for(production)
                     for name, production in self.target.productions.items()
                 }
-                if found == self.answers:
+                if found == self.roles:
                     break
-                self.answers = found
+                self.roles = found
         finally:
-            self.settling = False
+            self.resolving_roles = False
 
-    def _classify(self, production: Production) -> str:
+    def _role_for(self, production: Production) -> str:
         if self.brackets_of(production) or self.line_openings_of(production):
             return SPAN
         # A production nothing would colour is no rule of its own: whatever
         # reached it colours it, which is what keeps whitespace and punctuation
         # out of the contexts as rules.
-        if styles_of(production) not in ([], ["Normal"]) and self.is_regular(production):
+        if styles_of(production) not in ([], ["Normal"]) and self.is_regular(
+            production
+        ):
             return TOKEN
         return INLINE
 
@@ -389,11 +417,11 @@ class Classifier:
         an expression, and an expression does not recurse. It is transparent
         instead, and whatever it holds is read where it was reached.
         """
-        return regex_of(production.rule, self.production) is not None
+        return regex_of(production.rule, self.production_named) is not None
 
     # -- what a production opens and closes with ---------------------------
 
-    def terminal_of(self, part: Rule) -> Terminal | None:
+    def fixed_character_of(self, part: Rule) -> FixedCharacter | None:
         """The one character a part matches, with the styles it carries.
 
         A part naming a macro is followed, so a marker keeps the class its own
@@ -404,7 +432,7 @@ class Classifier:
         if char is not None:
             return (char, [])
         if isinstance(part, Reference):
-            production = self.production(part.name)
+            production = self.production_named(part.name)
             if production is not None and len(production.alternatives) == 1:
                 char = single_character(production.alternatives[0])
                 if char is not None:
@@ -421,29 +449,37 @@ class Classifier:
         return [
             parts
             for alternative in production.alternatives
-            if len(parts := parts_of(alternative)) >= 2
+            if len(parts := merged_top_level_parts(alternative)) >= 2
         ]
 
-    def brackets_of(self, production: Production) -> tuple[Terminal, Terminal] | None:
+    def brackets_of(
+        self, production: Production
+    ) -> tuple[FixedCharacter, FixedCharacter] | None:
         """The fixed pair a production wraps things in, or None.
 
         Every spanning alternative must agree on the pair, and neither end may
         be a newline: a pair is what an editor folds, and a line break is not
         text.
         """
-        found: tuple[Terminal, Terminal] | None = None
+        found: tuple[FixedCharacter, FixedCharacter] | None = None
         for parts in self.spanning_alternatives(production):
-            opening, closing = self.terminal_of(parts[0]), self.terminal_of(parts[-1])
+            opening, closing = (
+                self.fixed_character_of(parts[0]),
+                self.fixed_character_of(parts[-1]),
+            )
             if opening is None or closing is None:
                 return None
             if "\n" in (opening[0], closing[0]):
                 return None
-            if found is not None and (found[0][0], found[1][0]) != (opening[0], closing[0]):
+            if found is not None and (found[0][0], found[1][0]) != (
+                opening[0],
+                closing[0],
+            ):
                 return None
             found = (opening, closing)
         return found
 
-    def line_openings_of(self, production: Production) -> list[Terminal]:
+    def line_openings_of(self, production: Production) -> list[FixedCharacter]:
         """The characters a production opens with when it runs to a line break.
 
         This is a line role: `d …` is a definition to the end of its line, `# …`
@@ -457,14 +493,14 @@ class Classifier:
         alternative lines, is still one span: where it ends is what the chain of
         line contexts works out.
         """
-        found: list[Terminal] = []
+        found: list[FixedCharacter] = []
         alternatives = self.spanning_alternatives(production)
         if not alternatives or len(alternatives) != len(production.alternatives):
             return []
         if not self.crosses_line(production.rule):
             return []
         for parts in alternatives:
-            opening = self.terminal_of(parts[0])
+            opening = self.fixed_character_of(parts[0])
             if opening is None or opening[0] == "\n":
                 return []
             if opening[0] not in [char for char, _ in found]:
@@ -480,16 +516,16 @@ class Classifier:
         reference, and a node that can reach one is never one rule's worth of
         matching.
         """
-        return self._crosses(node, seen=frozenset())
+        return self._can_reach_newline(node, seen=frozenset())
 
-    def _crosses(self, node: Rule, seen: frozenset[str]) -> bool:
-        for found in walk(node):
+    def _can_reach_newline(self, node: Rule, seen: frozenset[str]) -> bool:
+        for found in walk_rule_tree(node):
             if is_newline(found):
                 return True
             if isinstance(found, Reference) and found.name not in seen:
-                production = self.production(found.name)
-                if production is not None and self.of(production) == INLINE:
-                    if self._crosses(production.rule, seen | {found.name}):
+                production = self.production_named(found.name)
+                if production is not None and self.role_of(production) == INLINE:
+                    if self._can_reach_newline(production.rule, seen | {found.name}):
                         return True
         return False
 
@@ -509,8 +545,8 @@ class MachineBuilder:
         self.parse = parse
         #: The order tokens are tried in, from `Lex`'s `File` where there is one.
         self.order = order or []
-        self.classify = Classifier(parse)
-        self.splitter = Splitter(self.classify)
+        self.classifier = Classifier(parse)
+        self.line_splitter = LineSplitter(self.classifier)
         self.machine = Machine()
         self.names = NameAllocator()
         #: The context each state key was given.
@@ -522,7 +558,7 @@ class MachineBuilder:
 
     def build(self) -> Machine:
         """Build every context, starting at the target's `File`."""
-        start = self.classify.production(START_PRODUCTION)
+        start = self.classifier.production_named(START_PRODUCTION)
         if start is None:
             return self.machine
         self.machine.start = self.context_for(
@@ -558,17 +594,17 @@ class MachineBuilder:
         """
         if depth > MAX_LINE_STATES:
             raise GeneratorError(
-                f"the rule {_role_of(name)!r} leaves more behind after every line "
+                f"the rule {_production_name_of_chain(name)!r} leaves more behind after every line "
                 "break, so it never reaches a line it could end on. A highlighter "
                 "reads one line at a time, and a role that carries on has to carry "
                 "on into the same thing each time"
             )
 
-        parts, leftovers = self.reading(tails)
+        parts, leftovers = self.parts_and_leftovers_of(tails)
         # The styles and the way in belong to the key: an attribute line and an
         # alternative line may leave the same thing behind and still not be the
         # same state.
-        key = f"{self.signature(tails)}#{depth}#{','.join(styles)}#{pushed:d}"
+        key = f"{self.state_signature(tails)}#{depth}#{','.join(styles)}#{pushed:d}"
         found = self.states.get(key)
         if found is not None:
             return found
@@ -583,25 +619,29 @@ class MachineBuilder:
         # Extended rather than assigned: the walk below reaches the states this
         # one leads to, and a span whose body is this very state inserts its
         # closing rule while we are still here. Assigning would drop it.
-        context.rules.extend(self.rules_for(parts, styles))
+        context.rules.extend(self.rules_for_production(parts, styles))
 
         if escapable and depth > 0:
             # A chain must be able to leave: a line beginning with something
             # none of its rules knows pops the whole chain, so the context below
             # reads that line from its first character.
             context.rules.append(
-                ContextRule(match=Match(rule=_any_character(), look_ahead=True), pop=depth + 1)
+                ContextRule(
+                    match=Match(rule=_any_character(), look_ahead=True), pop=depth + 1
+                )
             )
 
         # Where the next line begins: the leftovers, as a state of their own. A
         # state whose next line is itself simply stays, which is what a run of
         # lines all alike — a scope, the lines of a group — amounts to. A
         # leftover of nothing is a line role that has said all it had to say.
-        following = [left for left in leftovers if key_of(left) != key_of(EMPTY)]
+        following = [
+            left for left in leftovers if state_key_of(left) != state_key_of(EMPTY)
+        ]
         if not following:
             if leftovers and escapable:
                 context.line_end = POP
-        elif self.signature(following) == self.signature(tails):
+        elif self.state_signature(following) == self.state_signature(tails):
             context.line_end = STAY
         else:
             context.line_end = self.context_for(
@@ -611,24 +651,28 @@ class MachineBuilder:
 
     # -- states ------------------------------------------------------------
 
-    def reading(self, tails: list[Rule]) -> tuple[list[Rule], list[Rule]]:
+    def parts_and_leftovers_of(
+        self, tails: list[Rule]
+    ) -> tuple[list[Rule], list[Rule]]:
         """What a state matches on its line, and what it leaves for the next."""
         parts: list[Rule] = []
         leftovers: list[Rule] = []
         for tail in tails:
-            line = self.splitter.read(tail)
-            _extend(parts, line.parts)
-            _extend(leftovers, line.leftovers)
+            line = self.line_splitter.split_at_line_breaks(tail)
+            _add_unseen(parts, line.matched_on_this_line)
+            _add_unseen(leftovers, line.left_for_next_line)
         return parts, leftovers
 
-    def signature(self, tails: list[Rule]) -> str:
+    def state_signature(self, tails: list[Rule]) -> str:
         """What tells one state from another, whatever it was reached through."""
-        parts, leftovers = self.reading(tails)
-        return f"{_state_key(parts)}=>{_state_key(leftovers)}"
+        parts, leftovers = self.parts_and_leftovers_of(tails)
+        return f"{_state_key_of_tails(parts)}=>{_state_key_of_tails(leftovers)}"
 
     # -- rules -------------------------------------------------------------
 
-    def rules_for(self, parts: list[Rule], styles: list[str]) -> list[ContextRule]:
+    def rules_for_production(
+        self, parts: list[Rule], styles: list[str]
+    ) -> list[ContextRule]:
         """The rules a line's worth of parts contributes, pushes before matches.
 
         A push comes first so an opening character is not eaten by a token of
@@ -639,23 +683,29 @@ class MachineBuilder:
         matches: list[tuple[int, ContextRule]] = []
         seen: set[str] = set()
 
-        for part in self.expanded(parts):
-            key = key_of(part)
+        for part in self.with_transparent_calls_expanded(parts):
+            key = state_key_of(part)
             if key in seen:
                 continue
             seen.add(key)
-            part = self.tightened(part)
+            part = self.made_to_consume_input(part)
             if part is None:
                 continue
-            production = self._referenced(part)
+            production = self._production_called_by(part)
             if production is None:
-                matches.append((len(self.order), ContextRule(match=Match(part), styles=list(styles))))
+                matches.append(
+                    (len(self.order), ContextRule(match=Match(part), styles=list(styles)))
+                )
                 continue
-            kind = self.classify.of(production)
+            kind = self.classifier.role_of(production)
             if kind == SPAN:
                 pushes.extend(self.span_rules(production, styles))
             elif kind == TOKEN:
-                rank = self.order.index(production.name) if production.name in self.order else len(self.order)
+                rank = (
+                    self.order.index(production.name)
+                    if production.name in self.order
+                    else len(self.order)
+                )
                 matches.append(
                     (rank, ContextRule(match=Match(part), styles=styles_of(production)))
                 )
@@ -665,30 +715,36 @@ class MachineBuilder:
                 )
 
         matches.sort(key=lambda ranked: ranked[0])
-        return _distinct(pushes + [rule for _, rule in matches], self.classify.production)
+        return _without_duplicate_rules(
+            pushes + [rule for _, rule in matches],
+            self.classifier.production_named,
+        )
 
-    def expanded(self, parts: list[Rule]) -> list[Rule]:
+    def with_transparent_calls_expanded(self, parts: list[Rule]) -> list[Rule]:
         r"""The parts with every transparent call replaced by what it holds.
 
-        A part reached through the splitter is already atomic, but one taken
+        A part reached through the line splitter is already atomic, but one taken
         straight from an alternative — `d Atom = Number / Skipped / \( Expr \)`
         — may still name a macro standing for several rules, and each of them
         wants its own class.
         """
         out: list[Rule] = []
         for part in parts:
-            production = self._referenced(part)
+            production = self._production_called_by(part)
             if (
                 production is not None
-                and self.classify.of(production) == INLINE
-                and not self.splitter.atomic(part)
+                and self.classifier.role_of(production) == INLINE
+                and not self.line_splitter.matchable_as_one_rule(part)
             ):
-                out.extend(self.expanded(self.splitter.read(production.rule).parts))
+                split = self.line_splitter.split_at_line_breaks(production.rule)
+                out.extend(
+                    self.with_transparent_calls_expanded(split.matched_on_this_line)
+                )
             else:
                 out.append(part)
         return out
 
-    def tightened(self, part: Rule) -> Rule | None:
+    def made_to_consume_input(self, part: Rule) -> Rule | None:
         """A part that must match something, or None when it cannot be made to.
 
         A rule matching nothing makes no progress, and a highlighter trying it at
@@ -697,23 +753,27 @@ class MachineBuilder:
         and the run of whitespace it wraps is exactly the rule the context
         wants, so the optionality is dropped rather than the rule.
         """
-        if not nullable(part, self.classify.production):
+        if not can_match_empty(part, self.classifier.production_named):
             return part
         if isinstance(part, Repetition) and part.minimum == 0:
-            body = self.tightened(part.body)
+            body = self.made_to_consume_input(part.body)
             if body is not None:
-                return Repetition(body, 1, part.maximum, "+" if part.marker == "*" else "")
+                return Repetition(
+                    body, 1, part.maximum, "+" if part.marker == "*" else ""
+                )
         if isinstance(part, Choice):
             options = [
                 tight
                 for option in part.options
-                if (tight := self.tightened(option)) is not None
+                if (tight := self.made_to_consume_input(option)) is not None
             ]
             if options:
                 return options[0] if len(options) == 1 else Choice(options, part.symbol)
         return None
 
-    def span_rules(self, production: Production, styles: list[str]) -> list[ContextRule]:
+    def span_rules(
+        self, production: Production, styles: list[str]
+    ) -> list[ContextRule]:
         """The rules entering a span, and the rules its short alternatives give.
 
         `d Atom = Number / \\( Expr \\)` brackets with one alternative and matches
@@ -722,7 +782,7 @@ class MachineBuilder:
         an alternative line — and each becomes a rule of its own.
         """
         rules: list[ContextRule] = []
-        brackets = self.classify.brackets_of(production)
+        brackets = self.classifier.brackets_of(production)
         inner = self.span_context(production)
 
         if brackets is not None:
@@ -730,7 +790,8 @@ class MachineBuilder:
             rules.append(
                 ContextRule(
                     match=Match(
-                        _character(opening), word_boundary=_is_word_character(opening)
+                        _character_rule(opening),
+                        word_boundary=_is_word_character(opening),
                     ),
                     styles=opening_styles or styles_of(production),
                     push=inner,
@@ -738,11 +799,11 @@ class MachineBuilder:
                 )
             )
         else:
-            for opening, opening_styles in self.classify.line_openings_of(production):
+            for opening, opening_styles in self.classifier.line_openings_of(production):
                 rules.append(
                     ContextRule(
                         match=Match(
-                            _character(opening),
+                            _character_rule(opening),
                             word_boundary=_is_word_character(opening),
                         ),
                         styles=opening_styles or styles_of(production),
@@ -754,9 +815,9 @@ class MachineBuilder:
         short = [
             parts[0]
             for alternative in production.alternatives
-            if len(parts := parts_of(alternative)) == 1
+            if len(parts := merged_top_level_parts(alternative)) == 1
         ]
-        rules.extend(self.rules_for(short, styles))
+        rules.extend(self.rules_for_production(short, styles))
         return rules
 
     def span_context(self, production: Production) -> str:
@@ -764,13 +825,13 @@ class MachineBuilder:
         found = self.spans.get(production.name)
         if found is not None:
             return found
-        brackets = self.classify.brackets_of(production)
+        brackets = self.classifier.brackets_of(production)
         styles = styles_of(production)
         bodies: list[Rule] = []
-        for parts in self.classify.spanning_alternatives(production):
+        for parts in self.classifier.spanning_alternatives(production):
             # Everything between the opening and, for a bracketing span, the
             # closing character; a line span keeps everything after its opening.
-            bodies.append(_sequence(list(parts[1:-1] if brackets else parts[1:])))
+            bodies.append(_sequence_rule(list(parts[1:-1] if brackets else parts[1:])))
         name = self.context_for(
             bodies,
             production.name,
@@ -784,7 +845,7 @@ class MachineBuilder:
         if brackets is not None:
             _, (closing, closing_styles) = brackets
             closer = ContextRule(
-                match=Match(_character(closing)),
+                match=Match(_character_rule(closing)),
                 styles=closing_styles or styles,
                 pop=1,
                 region=production.name,
@@ -792,7 +853,9 @@ class MachineBuilder:
             # The closing character comes first, so nothing else may eat it. Two
             # places reaching the same span share its context, and it needs the
             # rule only once.
-            if not any(_same_rule(rule, closer) for rule in context.rules):
+            if not any(
+                _matches_and_acts_the_same(rule, closer) for rule in context.rules
+            ):
                 context.rules.insert(0, closer)
         self.spans[production.name] = name
         if brackets is None and context.line_end == STAY:
@@ -804,17 +867,17 @@ class MachineBuilder:
 
     # -- reading a part ----------------------------------------------------
 
-    def _referenced(self, part: Rule) -> Production | None:
+    def _production_called_by(self, part: Rule) -> Production | None:
         """The production a part calls, when it is nothing but a call."""
         if isinstance(part, Reference):
-            return self.classify.production(part.name)
+            return self.classifier.production_named(part.name)
         return None
 
 
-def _same_rule(one: ContextRule, other: ContextRule) -> bool:
+def _matches_and_acts_the_same(one: ContextRule, other: ContextRule) -> bool:
     """Whether two rules match the same text and do the same thing with it."""
     return (
-        key_of(one.match.rule) == key_of(other.match.rule)
+        state_key_of(one.match.rule) == state_key_of(other.match.rule)
         and one.match.look_ahead == other.match.look_ahead
         and one.match.word_boundary == other.match.word_boundary
         and one.push == other.push
@@ -823,7 +886,9 @@ def _same_rule(one: ContextRule, other: ContextRule) -> bool:
     )
 
 
-def _distinct(rules: list[ContextRule], lookup) -> list[ContextRule]:
+def _without_duplicate_rules(
+    rules: list[ContextRule], find_production
+) -> list[ContextRule]:
     """Drop the rules a context already has.
 
     Several parts of a grammar reach the same terminal — every alternative of a
@@ -834,7 +899,9 @@ def _distinct(rules: list[ContextRule], lookup) -> list[ContextRule]:
     seen: set[tuple] = set()
     out: list[ContextRule] = []
     for rule in rules:
-        pattern = regex_of(rule.match.rule, lookup) or key_of(rule.match.rule)
+        pattern = regex_of(rule.match.rule, find_production) or state_key_of(
+            rule.match.rule
+        )
         key = (
             pattern,
             rule.match.look_ahead,
@@ -849,7 +916,7 @@ def _distinct(rules: list[ContextRule], lookup) -> list[ContextRule]:
     return out
 
 
-def _role_of(name: str) -> str:
+def _production_name_of_chain(name: str) -> str:
     """The production a chain of line contexts was named after.
 
     Each further line of a role is named `…Line`, so the production is what is
@@ -860,9 +927,9 @@ def _role_of(name: str) -> str:
     return name or "File"
 
 
-def _state_key(tails: list[Rule]) -> str:
+def _state_key_of_tails(tails: list[Rule]) -> str:
     """What identifies a state: the leftovers it holds, however they were found."""
-    return "|".join(sorted(key_of(tail) for tail in tails))
+    return "|".join(sorted(state_key_of(tail) for tail in tails))
 
 
 #: Where a rule the machine invented came from. It is not in any file, and
@@ -870,14 +937,14 @@ def _state_key(tails: list[Rule]) -> str:
 _NOWHERE = Span(Position(0, 1, 1), Position(0, 1, 1))
 
 
-def _item(text: str) -> Item:
+def _text_item(text: str) -> Item:
     """An item spelling the given text, for a rule the machine builds itself."""
     return Item(span=_NOWHERE, parts=[Text(span=_NOWHERE, value=text)])
 
 
-def _character(char: str) -> Rule:
+def _character_rule(char: str) -> Rule:
     """A rule matching one fixed character."""
-    return MacroCall(macro=CHARACTER, item=_item(char))
+    return MacroCall(macro=CHARACTER, item=_text_item(char))
 
 
 def _is_word_character(char: str) -> bool:
@@ -891,7 +958,7 @@ def _any_character() -> Rule:
     MGFF has no negated set, so "anything" is spelled as the union of the
     categories — which is every character a line may hold.
     """
-    return MacroCall(macro=CHARACTER_SET, item=_item(_ANYTHING))
+    return MacroCall(macro=CHARACTER_SET, item=_text_item(_ANYTHING))
 
 
 #: Every character that can begin something, as a character set spells it.

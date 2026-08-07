@@ -7,8 +7,8 @@ matched against the item's **signature**, its text with the groups emptied, so
 
 A shape is two things, and both are generic:
 
-    pattern       which calls it answers to
-    extract_args  what such a call carries, as a dictionary
+    pattern            which calls it answers to
+    extract_arguments  what such a call carries, as a dictionary
 
 The dictionary is the shape's whole meaning. What a call then *produces* is the
 business of the `MacroDefinition` holding the shape.
@@ -28,7 +28,7 @@ from ..lexing.cst import Item
 
 #: Reads a matched call: the item, and the match of its shape's pattern. The
 #: keys of the result are the parameter names a `produce_call` is written with.
-ExtractArgs = Callable[[Item, re.Match[str]], dict[str, object]]
+ExtractArguments = Callable[[Item, re.Match[str]], dict[str, object]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,7 +37,7 @@ class MacroShape:
 
     name: str  # what the shape is called, in messages and dumps
     pattern: re.Pattern[str]
-    extract_args: ExtractArgs
+    extract_arguments: ExtractArguments
 
     def match(self, signature: str) -> re.Match[str] | None:
         """Whether a signature calls this shape, and what its pattern captured."""

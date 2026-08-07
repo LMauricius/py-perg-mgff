@@ -14,7 +14,7 @@ from ...mgff.semantics.model import GrammarModel
 from ..base import Generator
 from ..utils.emit import Emitter
 from ..utils.naming import pascal_case, safe_file_name, safe_identifier
-from ..utils.settings import setting
+from ..utils.settings import setting_value
 from ..utils.xmlwrite import Element
 from .contexts import ContextBuilder
 
@@ -48,7 +48,7 @@ class KateGenerator(Generator):
         """
         # The words of a file name come first, so `my-toy.mgff` gives `MyToy`
         # rather than a spelled-out hyphen.
-        return setting(model.attributes, "name", None) or safe_identifier(
+        return setting_value(model.attributes, "name", None) or safe_identifier(
             pascal_case(Path(model.name).stem), fallback="Grammar"
         )
 
@@ -58,17 +58,17 @@ class KateGenerator(Generator):
         """Render the syntax definition without touching the file system."""
         builder = ContextBuilder(model)
         builder.build()
-        contexts, item_datas, lists = builder.elements()
+        contexts, item_data_elements, lists = builder.built_elements()
 
         root = self.language_element(model)
         highlighting = root.child("highlighting")
         highlighting.children.extend(lists)
         highlighting.child("contexts").children.extend(contexts)
-        highlighting.child("itemDatas").children.extend(item_datas)
+        highlighting.child("itemDatas").children.extend(item_data_elements)
         self.general_element(root, model)
 
         out = Emitter()
-        out.line(_HEADER)
+        out.write_line(_HEADER)
         root.write(out)
         return out.render()
 
@@ -77,17 +77,20 @@ class KateGenerator(Generator):
         name = self.language_name(model)
         attributes = {
             "name": name,
-            "version": setting(model.attributes, "version", "1"),
-            "kateversion": setting(model.attributes, "kateversion", KATE_VERSION),
-            "section": setting(model.attributes, "section", "Sources"),
-            "extensions": setting(model.attributes, "extensions", f"*.{name.lower()}"),
-            "mimetype": setting(model.attributes, "mimetype", None),
-            "author": setting(model.attributes, "author", None),
-            "license": setting(model.attributes, "license", None),
-            "priority": setting(model.attributes, "priority", None),
+            "version": setting_value(model.attributes, "version", "1"),
+            "kateversion": setting_value(model.attributes, "kateversion", KATE_VERSION),
+            "section": setting_value(model.attributes, "section", "Sources"),
+            "extensions": setting_value(
+                model.attributes, "extensions", f"*.{name.lower()}"
+            ),
+            "mimetype": setting_value(model.attributes, "mimetype", None),
+            "author": setting_value(model.attributes, "author", None),
+            "license": setting_value(model.attributes, "license", None),
+            "priority": setting_value(model.attributes, "priority", None),
         }
         return Element(
-            "language", {key: value for key, value in attributes.items() if value is not None}
+            "language",
+            {key: value for key, value in attributes.items() if value is not None},
         )
 
     def general_element(self, root: Element, model: GrammarModel) -> None:
@@ -99,7 +102,9 @@ class KateGenerator(Generator):
         general = root.child("general")
         general.child(
             "keywords",
-            casesensitive=setting(model.attributes, "casesensitive", "1"),
-            weakDeliminator=setting(model.attributes, "weakDeliminator", None),
-            additionalDeliminator=setting(model.attributes, "additionalDeliminator", None),
+            casesensitive=setting_value(model.attributes, "casesensitive", "1"),
+            weakDeliminator=setting_value(model.attributes, "weakDeliminator", None),
+            additionalDeliminator=setting_value(
+                model.attributes, "additionalDeliminator", None
+            ),
         )

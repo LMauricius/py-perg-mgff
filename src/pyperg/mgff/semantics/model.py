@@ -29,11 +29,11 @@ from typing import cast
 
 from ...diagnostics.errors import SemanticError
 from ...diagnostics.span import Span
-from ..grammar.expand import expand
-from ..grammar.macros import Macro, ProduceCall, Scoped
+from ..grammar.expand import expand_alternatives
+from ..grammar.macros import Macro, ProduceCall, ScopeLookupPoint
 from ..grammar.parser import parse
 from ..grammar.scope import MacroSource, Scope, TargetScope, signature_of
-from ..lexing.cst import File, Group, Item, group_items, render_item
+from ..lexing.cst import File, Group, Item, items_in_group, render_item
 from .attributes import collect_attributes, collect_scope_attributes
 from .context import CallContext
 from ..common.rules import Choice, Rule, Reference, Sequence
@@ -97,7 +97,7 @@ class GrammarModel:
 
     def target(self, name: str) -> Target | None:
         """One target by name, or None when the grammar has no such phase."""
-        return next((t for t in self.targets if t.name == name), None)
+        return next((target for target in self.targets if target.name == name), None)
 
 
 # -- resolution ------------------------------------------------------------
@@ -111,20 +111,20 @@ def resolve(file: File, name: str, macros: list[Macro]) -> GrammarModel:
 
     `macros` are the definitions in force, and they are asked for rather than
     assumed: nothing in MGFF says what `( R )+` means, so the vocabulary is the
-    generator's to choose. `mgff.common.rule_tree_macros` builds the usual one.
+    generator's to choose. `mgff.common.rule_tree_macro_order` builds the usual one.
     """
-    grammar = parse(file, defined_macro_factory)
+    grammar = parse(file, rule_tree_factory)
 
     model = GrammarModel(name=name)
     # Earlier targets stay visible to later ones: MGFF leaves the decision to
     # the generator, and a `Parse` naming the tokens of a `Lex` is the usual
     # arrangement — Appendix A writes `d Factor = Number / Ident / \( Expr \)`.
-    earlier: list[TargetScope] = []
+    earlier_targets: list[TargetScope] = []
     for target_name, scope_target in grammar.targets.items():
         model.targets.append(
-            resolve_target(macros, target_name, scope_target, earlier)
+            resolve_target(macros, target_name, scope_target, earlier_targets)
         )
-        earlier.append(scope_target)
+        earlier_targets.append(scope_target)
     # The file scope resolves on its own, and after the targets: its macros see
     # nothing but each other, since a scope is searched outwards only.
     model.globals = resolve_target(macros, "", grammar, [])
@@ -132,13 +132,13 @@ def resolve(file: File, name: str, macros: list[Macro]) -> GrammarModel:
     return model
 
 
-def _target_name(source: MacroSource) -> str:
+def _defining_target_name(source: MacroSource) -> str:
     """The name of the target a macro was written in, `""` when it is shared."""
-    defining = _defining_target(source)
+    defining = _enclosing_target_scope(source)
     return defining.name if defining is not None else ""
 
 
-def _defining_target(source: MacroSource) -> TargetScope | None:
+def _enclosing_target_scope(source: MacroSource) -> TargetScope | None:
     """The target a macro was written in, or None when it is shared by all."""
     scope: Scope | None = source.scope
     while scope is not None:
@@ -148,7 +148,7 @@ def _defining_target(source: MacroSource) -> TargetScope | None:
     return None
 
 
-def defined_macro_factory(source: MacroSource) -> ProduceCall:
+def rule_tree_factory(source: MacroSource) -> ProduceCall:
     """What a call of one of the grammar's own `d` definitions produces.
 
     Built while the file is parsed, long before any resolver exists, so the
@@ -156,7 +156,7 @@ def defined_macro_factory(source: MacroSource) -> ProduceCall:
     """
 
     def produce_call(context: CallContext, **arguments: object) -> object:
-        return context.resolver.call_defined(source, context, arguments)
+        return context.resolver.produce_defined_macro_call(source, context, arguments)
 
     return produce_call
 
@@ -165,7 +165,7 @@ def resolve_target(
     macros: list[Macro],
     name: str,
     scope_target: Scope,
-    earlier: list[TargetScope],
+    earlier_targets: list[TargetScope],
 ) -> Target:
     """Resolve every production one target owns or reaches.
 
@@ -173,57 +173,57 @@ def resolve_target(
     what a grammar written without targets amounts to.
     """
     target = Target(name=name, attributes=collect_scope_attributes(scope_target))
-    resolver = _Resolver(macros, target, earlier)
+    resolver = _TargetResolver(macros, target, earlier_targets)
     # Seed with the macros written directly in the target; references then pull
     # in whatever else they reach, including macros shared outside it. A macro
     # carrying parameters is not seeded: its body is written in terms of names
     # only a call supplies, so it means nothing until one is made.
     for source in list(scope_target.sources.values()):
         if not source.matches_nothing and not source.parameters:
-            resolver.require(source)
-    resolver.run()
+            resolver.require_production(source)
+    resolver.resolve_pending()
     return target
 
 
-class _Resolver:
+class _TargetResolver:
     """Builds one target's production table, following references as it goes."""
 
     def __init__(
-        self, macros: list[Macro], target: Target, earlier: list[TargetScope]
+        self, macros: list[Macro], target: Target, earlier_targets: list[TargetScope]
     ) -> None:
         self.macros = macros
         self.target = target
-        self.earlier = earlier
-        self.pending: list[tuple[str, MacroSource]] = []
+        self.earlier_targets = earlier_targets
+        self.pending_productions: list[tuple[str, MacroSource]] = []
         # Which name each macro was filed under, so a second reference to the
         # same macro reuses it instead of renaming it. Sources compare by
         # identity, so the same `d` line is the same key however it is reached.
-        self.names: dict[MacroSource, str] = {}
+        self.production_names: dict[MacroSource, str] = {}
 
     # -- driving -----------------------------------------------------------
 
-    def require(self, source: MacroSource) -> str:
+    def require_production(self, source: MacroSource) -> str:
         """Register a macro as a production of this target and return its name."""
-        if source in self.names:
-            return self.names[source]
+        if source in self.production_names:
+            return self.production_names[source]
         name = self.production_name(source)
-        self.names[source] = name
+        self.production_names[source] = name
         # Reserve the name before resolving, so a self-reference finds it.
         self.target.productions[name] = Production(
-            name=name, span=source.span, origin=_target_name(source)
+            name=name, span=source.span, origin=_defining_target_name(source)
         )
-        self.pending.append((name, source))
+        self.pending_productions.append((name, source))
         return name
 
-    def run(self) -> None:
+    def resolve_pending(self) -> None:
         """Resolve every registered macro, and everything they reach."""
-        while self.pending:
-            name, source = self.pending.pop(0)
+        while self.pending_productions:
+            name, source = self.pending_productions.pop(0)
             production = self.target.productions[name]
             production.choice_symbol = source.choice_symbol
             production.attributes = collect_attributes(source)
             production.alternatives = [
-                self.sequence(option, source.scope, depth=0)
+                self.rule_for_items(option, source.scope, depth=0)
                 for option in source.options
             ]
 
@@ -237,7 +237,7 @@ class _Resolver:
         same name defined in two targets and both reached here — falls back to
         qualifying it.
         """
-        defining = _defining_target(source)
+        defining = _enclosing_target_scope(source)
         own = defining.qualified_name if defining is not None else ""
         qualified = source.scope.qualified_name
         name = qualified[len(own) :] + source.signature
@@ -246,9 +246,9 @@ class _Resolver:
         # Qualifying is what tells two targets' macros of one name apart. It is
         # a name like any other, so it is counted on until it is free: filing a
         # production under a name already taken would lose the other one.
-        return self._free_name(qualified + source.signature)
+        return self._unused_production_name(qualified + source.signature)
 
-    def _free_name(self, wanted: str) -> str:
+    def _unused_production_name(self, wanted: str) -> str:
         """A name this target has not filed a production under yet."""
         name, counter = wanted, 2
         while name in self.target.productions:
@@ -258,12 +258,12 @@ class _Resolver:
 
     # -- item to node ------------------------------------------------------
 
-    def sequence(self, items: list[Item], scope: Scope, depth: int) -> Rule:
+    def rule_for_items(self, items: list[Item], scope: Scope, depth: int) -> Rule:
         """A run of items as one node, unwrapped when there is only one."""
-        nodes = [self.node(item, scope, depth) for item in items]
+        nodes = [self.rule_for_item(item, scope, depth) for item in items]
         return nodes[0] if len(nodes) == 1 else Sequence(nodes)
 
-    def node(self, item: Item, scope: Scope, depth: int) -> Rule:
+    def rule_for_item(self, item: Item, scope: Scope, depth: int) -> Rule:
         """One item as a node, read through the macros in force.
 
         They are tried in order, and the first definition that does not decline
@@ -272,28 +272,32 @@ class _Resolver:
         """
         signature = signature_of(item)
         for macro in self.macros:
-            # `Scoped` is a place in the order rather than a macro: its shape
+            # `ScopeLookupPoint` is a place in the order rather than a macro: its shape
             # only filters the item, and the grammar's own definitions are
             # consulted there.
             selected = macro.shape.match(signature)
             if selected is None:
                 continue
-            definition = self.lookup(signature, scope) if isinstance(macro, Scoped) else macro
+            definition = (
+                self.find_definition(signature, scope)
+                if isinstance(macro, ScopeLookupPoint)
+                else macro
+            )
             if definition is None:
                 continue
             # `selected` belongs to the pattern that chose the macro, which for a
-            # `Scoped` is the filter rather than the definition's own pattern.
+            # `ScopeLookupPoint` is the filter rather than the definition's own pattern.
             # The two differ for a prefix scope — `Util_pair` is found under that
             # key while the definition's pattern is the `pair` it was written as
             # — so a definition reached by name reads the item alone and never
             # touches the match.
-            arguments = definition.shape.extract_args(item, selected)
-            node = self.produce(definition.produce_call, arguments, scope, depth)
+            arguments = definition.shape.extract_arguments(item, selected)
+            node = self.call_macro(definition.produce_call, arguments, scope, depth)
             if node is not None:
                 return node
         raise SemanticError(f"unknown name {render_item(item)!r}", item.span)
 
-    def produce(
+    def call_macro(
         self,
         produce_call: ProduceCall,
         arguments: dict[str, object],
@@ -312,39 +316,39 @@ class _Resolver:
         name and reported as an unknown one.
         """
         read = {
-            name: self.produced(value, scope, depth)
+            name: self.resolved_argument(value, scope, depth)
             for name, value in arguments.items()
         }
         context = CallContext(scope=scope, depth=depth, resolver=self)
         return cast("Rule | None", produce_call(context, **read))
 
-    def produced(self, value: object, scope: Scope, depth: int) -> object:
+    def resolved_argument(self, value: object, scope: Scope, depth: int) -> object:
         """A group as the rule it holds; anything else unchanged."""
         if isinstance(value, Group):
-            return self.sequence(group_items(value), scope, depth)
+            return self.rule_for_items(items_in_group(value), scope, depth)
         if isinstance(value, list) and all(isinstance(one, Group) for one in value):
-            return [self.sequence(group_items(one), scope, depth) for one in value]
+            return [self.rule_for_items(items_in_group(one), scope, depth) for one in value]
         return value
 
     # -- name lookup -------------------------------------------------------
 
-    def lookup(self, signature: str, scope: Scope):
+    def find_definition(self, signature: str, scope: Scope):
         """Find a definition from a scope, then in the targets resolved before this one.
 
         A target keeps its macros to itself as far as MGFF is concerned; letting
         a later target see an earlier one is this generator's policy.
         """
-        definition = scope.lookup(signature)
+        definition = scope.find_definition(signature)
         if definition is not None:
             return definition
-        for previous in reversed(self.earlier):
+        for previous in reversed(self.earlier_targets):
             if signature in previous.macros:
                 return previous.macros[signature]
         return None
 
     # -- what a `d` definition produces ------------------------------------
 
-    def call_defined(
+    def produce_defined_macro_call(
         self, source: MacroSource, context: CallContext, arguments: dict[str, object]
     ) -> Rule:
         """A call of one of the grammar's own definitions.
@@ -361,7 +365,7 @@ class _Resolver:
                 source.span,
             )
         if not source.parameters:
-            return Reference(self.require(source))
+            return Reference(self.require_production(source))
 
         if depth >= MAX_EXPANSION_DEPTH:
             raise SemanticError(
@@ -373,8 +377,10 @@ class _Resolver:
         # written there, and the body's own names resolve outward all the same.
         bindings = {name: value for name, value in arguments.items()}
         nodes = [
-            self.sequence(option, scope, depth + 1)
-            for option in expand(source.options, cast("dict[str, list[Item]]", bindings))
+            self.rule_for_items(option, scope, depth + 1)
+            for option in expand_alternatives(
+                source.options, cast("dict[str, list[Item]]", bindings)
+            )
         ]
         if len(nodes) == 1:
             return nodes[0]

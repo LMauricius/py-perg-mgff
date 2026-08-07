@@ -8,7 +8,7 @@ from collections.abc import Sequence
 
 from .. import __version__
 from ..diagnostics.errors import PyPergError, SourceError
-from ..diagnostics.reporter import report
+from ..diagnostics.reporter import print_error
 from ..diagnostics.source import SourceFile
 from .commands import COMMANDS
 
@@ -17,7 +17,10 @@ def build_cli_parser() -> argparse.ArgumentParser:
     """The root parser, with one subparser per command."""
     cli_parser = argparse.ArgumentParser(
         prog="pyperg",
-        description="Parser Environment Regenerator: generate lexers and parsers from MGFF grammars.",
+        description=(
+            "Parser Environment Regenerator: "
+            "generate lexers and parsers from MGFF grammars."
+        ),
     )
     cli_parser.add_argument(
         "--version", action="version", version=f"%(prog)s {__version__}"
@@ -32,32 +35,32 @@ def build_cli_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     """Run a command. Returns the process exit status."""
     cli_parser = build_cli_parser()
-    args = cli_parser.parse_args(argv)
+    cli_args = cli_parser.parse_args(argv)
 
-    if not hasattr(args, "_run"):
+    if not hasattr(cli_args, "_run"):
         cli_parser.print_help()
         return 2
 
     try:
-        return args._run(args)
-    except PyPergError as err:
+        return cli_args._run(cli_args)
+    except PyPergError as error:
         # Reload the file so the diagnostic can quote the offending line.
         source = None
-        if isinstance(err, SourceError) and getattr(args, "file", None):
+        if isinstance(error, SourceError) and getattr(cli_args, "file", None):
             try:
-                source = SourceFile.read(args.file)
+                source = SourceFile.read_from_path(cli_args.file)
             except OSError:
                 source = None
-        report(err, source)
+        print_error(error, source)
         return 1
-    except OSError as err:
-        print(f"error: {err}", file=sys.stderr)
+    except OSError as error:
+        print(f"error: {error}", file=sys.stderr)
         return 1
     except UnicodeDecodeError:
         # An MGFF file is UTF-8 text; anything else is a file we were handed by
         # mistake, and saying so beats a decoder's traceback.
-        where = getattr(args, "file", None) or "input"
-        print(f"error: {where}: not valid UTF-8", file=sys.stderr)
+        file_label = getattr(cli_args, "file", None) or "input"
+        print(f"error: {file_label}: not valid UTF-8", file=sys.stderr)
         return 1
     except RecursionError:
         # The lexer bounds how deeply groups may nest, and the generators bound

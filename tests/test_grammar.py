@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from pyperg.diagnostics.errors import SemanticError, SyntaxError_
+from pyperg.diagnostics.errors import GrammarSyntaxError, SemanticError
 from pyperg.mgff.grammar.parser import parse
 from pyperg.mgff.lexing.lexer import lex_text
 
@@ -12,12 +12,12 @@ CALC = Path(__file__).parent / "fixtures" / "calc.mgff"
 PREFIX = Path(__file__).parent / "fixtures" / "prefix.mgff"
 
 
-def read(text: str):
+def parse_source(text: str):
     """Parse a source string into its file scope."""
     return parse(lex_text(text))
 
 
-def read_fixture(path: Path):
+def parse_fixture_file(path: Path):
     return parse(lex_text(path.read_text(encoding="utf-8"), str(path)))
 
 
@@ -25,17 +25,17 @@ def read_fixture(path: Path):
 
 
 def test_targets_of_the_calculator_grammar():
-    root = read_fixture(CALC)
+    root = parse_fixture_file(CALC)
     assert sorted(root.targets) == ["Lex", "Parse"]
     assert "Digit" in root.targets["Lex"].sources
     assert "RParen" in root.targets["Lex"].sources
 
 
 def test_length_based_and_order_based_alternatives():
-    root = read_fixture(CALC)
-    op = root.targets["Lex"].sources["Op"]
-    assert op.choice_symbol == "|"
-    assert len(op.options) == 7
+    root = parse_fixture_file(CALC)
+    operator_macro = root.targets["Lex"].sources["Op"]
+    assert operator_macro.choice_symbol == "|"
+    assert len(operator_macro.options) == 7
 
     expr = root.targets["Parse"].sources["Expr"]
     assert expr.choice_symbol == "/"
@@ -43,19 +43,19 @@ def test_length_based_and_order_based_alternatives():
 
 
 def test_a_single_alternative_has_no_choice_symbol():
-    macro = read("d Digit = 0-9").sources["Digit"]
+    macro = parse_source("d Digit = 0-9").sources["Digit"]
     assert macro.choice_symbol is None
     assert len(macro.options) == 1
 
 
 def test_the_second_slash_of_a_line_is_ordinary():
     """On `/ Factor / Term` only the leading `/` is a marker."""
-    term = read_fixture(CALC).targets["Parse"].sources["Term"]
+    term = parse_fixture_file(CALC).targets["Parse"].sources["Term"]
     assert [len(option) for option in term.options] == [3, 3, 1]
 
 
 def test_attributes_accumulate_over_lines():
-    root = read_fixture(CALC)
+    root = parse_fixture_file(CALC)
     number = root.targets["Lex"].sources["Number"]
     # Attributes stay unread items; `skip(false)` is text `skip` plus one group.
     assert [item.text for item in number.attributes] == ["token", "skip"]
@@ -67,52 +67,52 @@ def test_attributes_accumulate_over_lines():
 
 
 def test_a_comment_does_not_end_a_macro():
-    macro = read("d x = a\n# comment\n/ b").sources["x"]
+    macro = parse_source("d x = a\n# comment\n/ b").sources["x"]
     assert len(macro.options) == 2
 
 
 def test_a_macro_may_bear_a_marker_name():
     """The head is read only after `d`, so any name will do."""
-    root = read("d / = a")
+    root = parse_source("d / = a")
     assert "/" in root.sources
 
 
 def test_an_empty_body_is_an_empty_option():
-    macro = read("d x =").sources["x"]
+    macro = parse_source("d x =").sources["x"]
     assert macro.options == [[]]
     assert not macro.matches_nothing
 
 
 def test_a_definition_separated_by_a_marker_has_no_options():
     """`d Head > Attributes` is how a named list of attributes is written."""
-    macro = read("d Common > token skip(false)").sources["Common"]
+    macro = parse_source("d Common > token skip(false)").sources["Common"]
     assert macro.options == []
     assert macro.matches_nothing
     assert [item.text for item in macro.attributes] == ["token", "skip"]
 
 
 def test_further_attribute_lines_add_to_an_option_less_macro():
-    macro = read("d Common > token\n> string").sources["Common"]
+    macro = parse_source("d Common > token\n> string").sources["Common"]
     assert macro.matches_nothing
     assert [item.text for item in macro.attributes] == ["token", "string"]
 
 
 def test_a_scope_carries_the_attribute_lines_at_its_top():
     """A `>` line with no macro above it describes the scope itself."""
-    root = read("> name(Toy) section(Sources)\n> license(MIT)\nd x = a")
+    root = parse_source("> name(Toy) section(Sources)\n> license(MIT)\nd x = a")
     assert [item.text for item in root.attributes] == ["name", "section", "license"]
 
 
 def test_a_target_carries_its_own_attributes():
-    root = read("t Parse (\n > post(Lex) over(tokens)\n d x = a\n)")
+    root = parse_source("t Parse (\n > post(Lex) over(tokens)\n d x = a\n)")
     target = root.targets["Parse"]
     assert [item.text for item in target.attributes] == ["post", "over"]
     assert not root.attributes
 
 
 def test_an_option_less_macro_takes_no_alternatives():
-    with pytest.raises(SyntaxError_) as excinfo:
-        read("d Common > token\n/ a")
+    with pytest.raises(GrammarSyntaxError) as excinfo:
+        parse_source("d Common > token\n/ a")
     assert "may not follow" in excinfo.value.message
 
 
@@ -120,13 +120,13 @@ def test_an_option_less_macro_takes_no_alternatives():
 
 
 def test_a_mixfix_head_gives_a_signature_and_parameters():
-    macro = read_fixture(PREFIX).sources["sep()by()"]
+    macro = parse_fixture_file(PREFIX).sources["sep()by()"]
     assert macro.name == "sepby"
     assert macro.parameters == ["R", "S"]
 
 
 def test_a_macro_remembers_the_scope_it_was_defined_in():
-    root = read_fixture(PREFIX)
+    root = parse_fixture_file(PREFIX)
     assert root.sources["sep()by()"].scope is root
     assert root.targets["Parse"].sources["Expr"].scope is root.targets["Parse"]
 
@@ -135,7 +135,7 @@ def test_a_macro_remembers_the_scope_it_was_defined_in():
 
 
 def test_nested_prefixes_concatenate():
-    root = read_fixture(PREFIX)
+    root = parse_fixture_file(PREFIX)
     util = root.subscopes["Util_"]
     inner = util.subscopes["Inner_"]
 
@@ -148,23 +148,23 @@ def test_nested_prefixes_concatenate():
 
 
 def test_a_prefixed_macro_is_called_by_its_local_name_from_within():
-    root = read_fixture(PREFIX)
+    root = parse_fixture_file(PREFIX)
     inner = root.subscopes["Util_"].subscopes["Inner_"]
-    assert inner.lookup_source("list") is inner.sources["list"]
-    assert inner.lookup_source("sep()by()") is root.sources["sep()by()"]
+    assert inner.find_source("list") is inner.sources["list"]
+    assert inner.find_source("sep()by()") is root.sources["sep()by()"]
     # The full name also resolves from within, since lookup carries on outwards.
-    assert inner.lookup_source("Util_Inner_list") is inner.sources["list"]
-    assert root.lookup_source("list") is None  # but the local name does not escape
+    assert inner.find_source("Util_Inner_list") is inner.sources["list"]
+    assert root.find_source("list") is None  # but the local name does not escape
 
 
 def test_a_target_keeps_its_macros_to_itself():
-    root = read_fixture(CALC)
+    root = parse_fixture_file(CALC)
     assert "Digit" not in root.sources
-    assert root.targets["Lex"].lookup_source("sep()by()") is root.sources["sep()by()"]
+    assert root.targets["Lex"].find_source("sep()by()") is root.sources["sep()by()"]
 
 
 def test_a_scope_knows_its_qualified_name():
-    root = read_fixture(PREFIX)
+    root = parse_fixture_file(PREFIX)
     assert root.subscopes["Util_"].subscopes["Inner_"].qualified_name == "Util_Inner_"
 
 
@@ -188,28 +188,28 @@ def test_a_scope_knows_its_qualified_name():
     ],
 )
 def test_bad_lines_are_rejected(source, message):
-    with pytest.raises((SyntaxError_, SemanticError)) as excinfo:
-        read(source)
+    with pytest.raises((GrammarSyntaxError, SemanticError)) as excinfo:
+        parse_source(source)
     assert message in excinfo.value.message
     assert excinfo.value.span is not None
 
 
 def test_a_name_may_not_be_defined_twice():
     with pytest.raises(SemanticError):
-        read("d x = a\nd x = b")
+        parse_source("d x = a\nd x = b")
 
 
 def test_a_prefix_may_not_collide_with_an_outer_name():
     with pytest.raises(SemanticError):
-        read("d Util_x = a\np Util_ (\n    d x = b\n)")
+        parse_source("d Util_x = a\np Util_ (\n    d x = b\n)")
 
 
 def test_a_target_inside_a_prefix_scope_is_rejected():
     """A phase is a phase of the file; one nowhere near the top generates nothing."""
-    with pytest.raises(SyntaxError_, match="inside another scope"):
+    with pytest.raises(GrammarSyntaxError, match="inside another scope"):
         parse(lex_text("p Util_ (\n  t Lex (\n    d Int = 0-9\n  )\n)\n"))
 
 
 def test_a_target_inside_a_target_is_rejected():
-    with pytest.raises(SyntaxError_, match="inside another scope"):
+    with pytest.raises(GrammarSyntaxError, match="inside another scope"):
         parse(lex_text("t Outer (\n  d A = a\n  t Inner (\n    d B = b\n  )\n)\n"))

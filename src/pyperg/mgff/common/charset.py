@@ -15,14 +15,14 @@ from __future__ import annotations
 import unicodedata
 from dataclasses import dataclass
 
-from .categories import CATEGORY_NAMES, category_members
+from .categories import CATEGORY_NAMES, categories_covered_by
 
 SEPARATOR = "|"
 RANGE_SEPARATOR = "-"
 
 
 @dataclass(slots=True)
-class CharacterPart:
+class CharacterSetPart:
     """One part of a set: a character, a range, or a category."""
 
     kind: str  # "character", "range" or "category"
@@ -35,14 +35,14 @@ class CharacterPart:
             return char == self.value
         if self.kind == "range":
             return self.value <= char <= self.high
-        return unicodedata.category(char) in category_members(self.value)
+        return unicodedata.category(char) in categories_covered_by(self.value)
 
 
 @dataclass(slots=True)
 class CharacterSet:
     """The union of one or more parts."""
 
-    parts: list[CharacterPart]
+    parts: list[CharacterSetPart]
 
     def matches(self, char: str) -> bool:
         """Whether a character belongs to the union."""
@@ -59,17 +59,17 @@ class CharacterSet:
 # -- reading text into a set -----------------------------------------------
 
 
-def parse_part(text: str) -> CharacterPart | None:
+def parse_character_set_part(text: str) -> CharacterSetPart | None:
     """Read one part of a set, or return None if the text is no valid part."""
     if len(text) == 1:
-        return CharacterPart("character", text)
+        return CharacterSetPart("character", text)
     # A range needs single characters on both sides, so it is exactly three
     # characters long with the separator in the middle.
     if len(text) == 3 and text[1] == RANGE_SEPARATOR:
         low, high = text[0], text[2]
-        return CharacterPart("range", low, high) if low <= high else None
+        return CharacterSetPart("range", low, high) if low <= high else None
     if text in CATEGORY_NAMES:
-        return CharacterPart("category", CATEGORY_NAMES[text])
+        return CharacterSetPart("category", CATEGORY_NAMES[text])
     return None
 
 
@@ -83,10 +83,10 @@ def parse_character_set(text: str) -> CharacterSet | None:
         return None
     # A lone `|` is the separator character itself, not an empty set.
     if text == SEPARATOR:
-        return CharacterSet([CharacterPart("character", SEPARATOR)])
-    parts: list[CharacterPart] = []
+        return CharacterSet([CharacterSetPart("character", SEPARATOR)])
+    parts: list[CharacterSetPart] = []
     for piece in text.split(SEPARATOR):
-        part = parse_part(piece)
+        part = parse_character_set_part(piece)
         if part is None:
             return None
         parts.append(part)

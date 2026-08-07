@@ -12,13 +12,13 @@ from __future__ import annotations
 
 from ...diagnostics.errors import GeneratorError
 from ...mgff.semantics.model import Production, Target
-from .walk import references
+from .walk import referenced_production_names
 
 #: The macro a target starts at. Every highlighting backend begins there.
 START_PRODUCTION = "File"
 
 
-def start_of(target: Target) -> Production:
+def start_production_of(target: Target) -> Production:
     """A target's `File` production, which is where generation begins."""
     production = target.productions.get(START_PRODUCTION)
     if production is None:
@@ -30,7 +30,7 @@ def start_of(target: Target) -> Production:
     return production
 
 
-def token_order(target: Target) -> list[str]:
+def token_names_in_order(target: Target) -> list[str]:
     """The token productions `File` names, in the order they were written.
 
     A highlighter takes the first rule that matches, so this order is the
@@ -39,7 +39,7 @@ def token_order(target: Target) -> list[str]:
     expressions that use them.
     """
     ordered: list[str] = []
-    for name in references(start_of(target).rule):
+    for name in referenced_production_names(start_production_of(target).rule):
         if name not in ordered and name in target.productions:
             ordered.append(name)
     if not ordered:

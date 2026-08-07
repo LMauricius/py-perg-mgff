@@ -27,12 +27,12 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from ...diagnostics.errors import SyntaxError_
+from ...diagnostics.errors import GrammarSyntaxError
 from ...diagnostics.span import Position, Span
 from ..lexing.cst import File, Group, Line
 from .macros import MacroDefinition, ProduceCall
-from .scope import MacroSource, Scope, TargetScope, make_source
-from .signatures import signature_to_shape
+from .scope import MacroSource, Scope, TargetScope, macro_source_from_head
+from .signatures import definition_shape
 
 #: Builds what a call of one `d` definition produces. Called once per definition,
 #: with the line as it was written, after all of its alternatives are in.
@@ -47,7 +47,7 @@ CHOICE_MARKERS = frozenset({"/", "|"})
 _EMPTY_SPAN = Span(Position(0, 1, 1), Position(0, 1, 1))
 
 
-def marker_of(line: Line) -> str | None:
+def line_marker_of(line: Line) -> str | None:
     """The role-carrying text of a line's first item, or None if it carries none.
 
     A marker is a complete first item of bare text, so the `/` of
@@ -69,22 +69,22 @@ def parse(file: File, factory: ProduceCallFactory | None = None) -> Scope:
     definitions are filed with a `produce_call` that raises, which is enough for
     reading a file's structure and no use for generating from it.
 
-    Raises `SyntaxError_` on a line whose first item names no role, on an
+    Raises `GrammarSyntaxError` on a line whose first item names no role, on an
     alternative with no macro to attach to, on mixed `/` and `|` markers, on an
     alternative line following a `>` line, on a target written inside another
     scope, and on a scope's own attributes written after its first definition.
     Raises `SemanticError` on a name defined twice in one scope.
     """
-    root = Scope(span=_covering_span(file.lines), name="", parent=None)
-    _parse_lines(file.lines, root, factory or _no_factory)
+    root = Scope(span=_span_covering_lines(file.lines), name="", parent=None)
+    _parse_lines(file.lines, root, factory or _structure_only_factory)
     return root
 
 
-def _no_factory(source: MacroSource) -> ProduceCall:
+def _structure_only_factory(source: MacroSource) -> ProduceCall:
     """The stand-in for a caller that only wants the structure of a file."""
 
     def produce_call(**arguments: object) -> object:
-        raise SyntaxError_(
+        raise GrammarSyntaxError(
             f"{source.name!r} was read without a generator to give it meaning",
             source.span,
         )
@@ -92,9 +92,9 @@ def _no_factory(source: MacroSource) -> ProduceCall:
     return produce_call
 
 
-def _covering_span(lines: list[Line]) -> Span:
+def _span_covering_lines(lines: list[Line]) -> Span:
     """The span from the first line to the last; a file with no lines is empty."""
-    return Span.between(lines[0].span, lines[-1].span) if lines else _EMPTY_SPAN
+    return Span.covering_both(lines[0].span, lines[-1].span) if lines else _EMPTY_SPAN
 
 
 def _parse_lines(
@@ -114,7 +114,7 @@ def _parse_lines(
     read: list[MacroSource] = []
 
     for line in lines:
-        marker = marker_of(line)
+        marker = line_marker_of(line)
         rest = line.items[1:]
 
         # Blank and comment lines carry no role and do not end the macro.
@@ -122,7 +122,7 @@ def _parse_lines(
             continue
 
         if marker is None:
-            raise SyntaxError_(
+            raise GrammarSyntaxError(
                 f"line starts with {line.items[0].text!r}, which names no role",
                 line.items[0].span,
             )
@@ -133,12 +133,12 @@ def _parse_lines(
             current = _parse_definition(line, scope)
             closed = bool(current.attribute_lists)
             opened = True
-            scope.reserve(current)
+            scope.reserve_name_for(current)
             read.append(current)
 
         # `/` and `|`: one more alternative of the current macro.
         elif marker in CHOICE_MARKERS:
-            _add_option(current, marker, closed, line)
+            _append_alternative(current, marker, closed, line)
 
         # `>`: attributes of the macro above, which end its alternatives. With no
         # macro above them they are the scope's own, and belong at its very top.
@@ -147,7 +147,7 @@ def _parse_lines(
                 current.attribute_lists.append(rest)
                 closed = True
             elif opened:
-                raise SyntaxError_(
+                raise GrammarSyntaxError(
                     "attributes with no macro to attach to; a scope's own "
                     "attributes are written above its first definition",
                     line.items[0].span,
@@ -163,15 +163,17 @@ def _parse_lines(
     # The alternatives of a `d` line arrive one line at a time, so a definition
     # is built only once the whole scope has been read.
     for source in read:
-        scope.define(source, _source_to_definition(source, custom_produce_call_factory))
+        scope.file_definition(
+            source, _build_definition(source, custom_produce_call_factory)
+        )
 
 
-def _source_to_definition(
+def _build_definition(
     source: MacroSource, custom_produce_call_factory: ProduceCallFactory
 ) -> MacroDefinition:
     """Build one definition: its shape from the head, its body from the factory."""
     return MacroDefinition(
-        shape=signature_to_shape(source.signature, source.parameters),
+        shape=definition_shape(source.signature, source.parameters),
         produce_call=custom_produce_call_factory(source),
     )
 
@@ -192,13 +194,13 @@ def _parse_definition(line: Line, scope: Scope) -> MacroSource:
     """
     items = line.items
     if len(items) < 2:
-        raise SyntaxError_("a definition needs a head after `d`", items[0].span)
+        raise GrammarSyntaxError("a definition needs a head after `d`", items[0].span)
     if len(items) < 3 or not (items[2].is_bare_text and items[2].text in ("=", ">")):
-        raise SyntaxError_(
+        raise GrammarSyntaxError(
             "a definition needs `=` or `>` right after the head", items[1].span
         )
 
-    macro = make_source(items[1], scope)
+    macro = macro_source_from_head(items[1], scope)
     if items[2].text == "=":
         macro.options.append(items[3:])
     else:
@@ -206,7 +208,7 @@ def _parse_definition(line: Line, scope: Scope) -> MacroSource:
     return macro
 
 
-def _add_option(
+def _append_alternative(
     current: MacroSource | None, marker: str, closed: bool, line: Line
 ) -> None:
     """Attach one `/` or `|` line to the current macro as a further alternative.
@@ -216,11 +218,11 @@ def _add_option(
     """
     where = line.items[0].span
     if current is None:
-        raise SyntaxError_(f"alternative `{marker}` with no macro to attach to", where)
+        raise GrammarSyntaxError(f"alternative `{marker}` with no macro to attach to", where)
     if closed:
-        raise SyntaxError_("an alternative may not follow a `>` line", where)
+        raise GrammarSyntaxError("an alternative may not follow a `>` line", where)
     if current.choice_symbol is not None and current.choice_symbol != marker:
-        raise SyntaxError_(
+        raise GrammarSyntaxError(
             f"macro {current.name!r} mixes `{current.choice_symbol}` and `{marker}`; "
             "all alternatives of one macro use the same marker",
             where,
@@ -239,16 +241,16 @@ def _parse_nested_scope(
     target keeps them. The name and the group may be written as two items or
     glued into one, so `p Util_ ( … )` and `p Util_( … )` are the same line.
     """
-    name, body = _scope_head(line, marker)
-    span = Span.between(line.items[0].span, body.span)
+    name, body = _scope_name_and_body(line, marker)
+    span = Span.covering_both(line.items[0].span, body.span)
 
     if marker == "t":
         # A phase is a phase of the file. Where a nested one would sit in the
         # chain of phases, and whether its macros are visible outside it, is
         # nothing MGFF says — and a target nobody reads would generate nothing
         # at all, silently.
-        if not _is_file_scope(parent):
-            raise SyntaxError_(
+        if not _is_file_level_scope(parent):
+            raise GrammarSyntaxError(
                 f"target {name!r} is written inside another scope; a target is "
                 "a phase of the whole file and is written at its top level",
                 line.items[0].span,
@@ -260,15 +262,15 @@ def _parse_nested_scope(
         scope = Scope(span=span, name=name, parent=parent)
         _parse_lines(body.lines, scope, factory)
         parent.add_subscope(scope)
-        parent.absorb(scope)
+        parent.merge_definitions_from(scope)
 
 
-def _is_file_scope(scope: Scope) -> bool:
+def _is_file_level_scope(scope: Scope) -> bool:
     """Whether a scope is the file itself, which is the one with no parent."""
     return scope.parent is None
 
 
-def _scope_head(line: Line, marker: str) -> tuple[str, Group]:
+def _scope_name_and_body(line: Line, marker: str) -> tuple[str, Group]:
     """The name and the body group of a `t` or `p` line, in either spelling."""
     kind = "target" if marker == "t" else "prefix"
     items = line.items[1:]
@@ -281,4 +283,4 @@ def _scope_head(line: Line, marker: str) -> tuple[str, Group]:
     if len(items) == 1 and len(items[0].groups) == 1 and items[0].text:
         return items[0].text, items[0].groups[0]
 
-    raise SyntaxError_(f"a {kind} is written `{marker} Name ( … )`", line.items[0].span)
+    raise GrammarSyntaxError(f"a {kind} is written `{marker} Name ( … )`", line.items[0].span)

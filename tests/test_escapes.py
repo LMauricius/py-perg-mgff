@@ -5,11 +5,11 @@ import pytest
 from pyperg.diagnostics.errors import LexError
 from pyperg.mgff.lexing.escapes import read_escape
 
-def resolve(text: str) -> str:
+def escaped_character(text: str) -> str:
     """The character an escape denotes, checking that the whole text is consumed."""
-    char, end = read_escape(text, 0)
+    character, end = read_escape(text, 0)
     assert end == len(text)
-    return char
+    return character
 
 
 @pytest.mark.parametrize(
@@ -30,7 +30,7 @@ def resolve(text: str) -> str:
     ],
 )
 def test_valid_escapes(text, expected):
-    assert resolve(text) == expected
+    assert escaped_character(text) == expected
 
 
 @pytest.mark.parametrize(
@@ -55,7 +55,7 @@ def test_invalid_escapes(text):
 
 def test_escape_carries_no_role():
     """An escaped parenthesis is text, never the opening of a group."""
-    assert resolve(r"\x28") == "("
+    assert escaped_character(r"\x28") == "("
 
 
 def test_a_named_sequence_is_not_one_character():

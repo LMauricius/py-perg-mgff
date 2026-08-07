@@ -4,11 +4,11 @@ The reading of a lexed file into scopes, targets and macros lives here; the
 lexical structure it starts from is `pyperg.mgff`.
 """
 
-from .macros import Macro, MacroDefinition, Scoped
-from .parser import marker_of, parse
-from .scope import MacroSource, Scope, TargetScope, make_source, signature_of
+from .macros import Macro, MacroDefinition, ScopeLookupPoint
+from .parser import line_marker_of, parse
+from .scope import MacroSource, Scope, TargetScope, macro_source_from_head, signature_of
 from .shapes import MacroShape
-from .signatures import signature_to_shape, shape
+from .signatures import definition_shape, make_shape
 
 __all__ = [
     "Macro",
@@ -16,12 +16,12 @@ __all__ = [
     "MacroShape",
     "MacroSource",
     "Scope",
-    "Scoped",
+    "ScopeLookupPoint",
     "TargetScope",
-    "signature_to_shape",
-    "make_source",
-    "marker_of",
+    "definition_shape",
+    "macro_source_from_head",
+    "line_marker_of",
+    "make_shape",
     "parse",
-    "shape",
     "signature_of",
 ]

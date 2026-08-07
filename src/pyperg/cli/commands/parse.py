@@ -30,7 +30,7 @@ class ParseCommand(Command):
         )
 
     def run(self, cli_args: argparse.Namespace) -> int:
-        source = SourceFile.read(cli_args.file)
+        source = SourceFile.read_from_path(cli_args.file)
         root = parse(lex(source))
         print(
             _render_scope(root, source.name, cli_args.spans, cli_args.absorbed),
@@ -42,52 +42,112 @@ class ParseCommand(Command):
 # -- rendering -------------------------------------------------------------
 
 
-def _render_scope(root: Scope, name: str, spans: bool, absorbed: bool) -> str:
-    out: list[str] = [f"file {name}\n"]
-    _render_body(root, depth=1, out=out, spans=spans, absorbed=absorbed)
-    return "".join(out)
+def _render_scope(root: Scope, name: str, show_spans: bool, show_absorbed: bool) -> str:
+    output_lines: list[str] = [f"file {name}\n"]
+    _render_body(
+        root,
+        depth=1,
+        output_lines=output_lines,
+        show_spans=show_spans,
+        show_absorbed=show_absorbed,
+    )
+    return "".join(output_lines)
 
 
-def _render_body(scope: Scope, depth: int, out: list[str], spans: bool, absorbed: bool) -> None:
+def _render_body(
+    scope: Scope,
+    depth: int,
+    output_lines: list[str],
+    show_spans: bool,
+    show_absorbed: bool,
+) -> None:
     if scope.attribute_list:
-        _write(out, depth, ">", _render_items(scope.attribute_list), None)
+        _append_tree_line(
+            output_lines,
+            depth,
+            ">",
+            _render_items_as_line(scope.attribute_list),
+            None,
+        )
 
-    for key, macro in scope.sources.items():
+    for signature, macro in scope.sources.items():
         # A macro whose key is not its own signature was absorbed from a prefix
         # scope, so it is already listed there under its local name.
-        if macro.scope is not scope and not absorbed:
+        if macro.scope is not scope and not show_absorbed:
             continue
-        _render_macro(key, macro, depth, out, spans)
+        _render_macro(signature, macro, depth, output_lines, show_spans)
 
-    for key, child in scope.subscopes.items():
-        if child.parent is not scope and not absorbed:
+    for prefix_name, child in scope.subscopes.items():
+        if child.parent is not scope and not show_absorbed:
             continue
-        _write(out, depth, "prefix", key, child.span if spans else None)
-        _render_body(child, depth + 1, out, spans, absorbed)
+        _append_tree_line(
+            output_lines,
+            depth,
+            "prefix",
+            prefix_name,
+            child.span if show_spans else None,
+        )
+        _render_body(child, depth + 1, output_lines, show_spans, show_absorbed)
 
     for target in scope.targets.values():
-        _write(out, depth, "target", target.name, target.span if spans else None)
-        _render_body(target, depth + 1, out, spans, absorbed)
+        _append_tree_line(
+            output_lines,
+            depth,
+            "target",
+            target.name,
+            target.span if show_spans else None,
+        )
+        _render_body(target, depth + 1, output_lines, show_spans, show_absorbed)
 
 
-def _render_macro(key: str, macro: MacroSource, depth: int, out: list[str], spans: bool) -> None:
-    detail = key
+def _render_macro(
+    signature: str,
+    macro: MacroSource,
+    depth: int,
+    output_lines: list[str],
+    show_spans: bool,
+) -> None:
+    detail = signature
     if macro.parameters:
         detail += f"  ({', '.join(macro.parameters)})"
-    _write(out, depth, "macro", detail, macro.span if spans else None)
+    _append_tree_line(
+        output_lines,
+        depth,
+        "macro",
+        detail,
+        macro.span if show_spans else None,
+    )
 
-    marker = macro.choice_symbol or "="
+    option_marker = macro.choice_symbol or "="
     for option in macro.options:
-        _write(out, depth + 1, marker, _render_items(option), None)
+        _append_tree_line(
+            output_lines,
+            depth + 1,
+            option_marker,
+            _render_items_as_line(option),
+            None,
+        )
     for attributes in macro.attribute_lists:
-        _write(out, depth + 1, ">", _render_items(attributes), None)
+        _append_tree_line(
+            output_lines,
+            depth + 1,
+            ">",
+            _render_items_as_line(attributes),
+            None,
+        )
 
 
-def _render_items(items: list[Item]) -> str:
+def _render_items_as_line(items: list[Item]) -> str:
     """One line of an option or an attribute list, as it was written."""
     return " ".join(render_item(item) for item in items) or "(empty)"
 
 
-def _write(out: list[str], depth: int, kind: str, detail: str, span: object) -> None:
+def _append_tree_line(
+    output_lines: list[str],
+    depth: int,
+    node_kind: str,
+    detail: str,
+    span: object,
+) -> None:
     suffix = f"  [{span}]" if span is not None else ""
-    out.append(f"{'  ' * depth}{kind} {detail}{suffix}\n")
+    output_lines.append(f"{'  ' * depth}{node_kind} {detail}{suffix}\n")

@@ -80,7 +80,7 @@ def _collect_into(
         name, arguments = parse_attribute(item)
         # An argument-less attribute naming an attribute-only macro is a
         # reference to a named list, not an attribute of its own.
-        referenced = scope.lookup_source(name) if not arguments else None
+        referenced = scope.find_source(name) if not arguments else None
         if referenced is not None and referenced.matches_nothing:
             if referenced in seen:
                 raise SemanticError(

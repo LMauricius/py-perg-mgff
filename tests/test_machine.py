@@ -6,7 +6,7 @@ import pytest
 
 from pyperg.diagnostics.errors import GeneratorError
 from pyperg.generators.kate import KateGenerator
-from pyperg.generators.utils.highlight import token_order
+from pyperg.generators.utils.highlight import token_names_in_order
 from pyperg.generators.utils.machine import (
     INLINE,
     POP,
@@ -48,101 +48,114 @@ t Parse (
 """
 
 
-def machine_of(text: str, name: str = "<test>"):
+def build_machine_from_text(text: str, name: str = "<test>"):
     model = resolve(lex_text(text, name), name, KateGenerator().macros())
-    parse = model.target("Parse")
-    lex = model.target("Lex")
-    return MachineBuilder(parse, token_order(lex) if lex else []).build(), parse
+    parse_target = model.target("Parse")
+    lex_target = model.target("Lex")
+    return (
+        MachineBuilder(
+            parse_target, token_names_in_order(lex_target) if lex_target else []
+        ).build(),
+        parse_target,
+    )
 
 
 def context_of(machine, name: str):
-    found = machine.contexts.get(name)
-    assert found is not None, f"no context named {name}; have {list(machine.contexts)}"
-    return found
+    context = machine.contexts.get(name)
+    assert (
+        context is not None
+    ), f"no context named {name}; have {list(machine.contexts)}"
+    return context
 
 
-def patterns_of(context, lookup) -> list[str]:
-    return [regex_of(rule.match.rule, lookup) for rule in context.rules]
+def patterns_for_context(context, find_production) -> list[str]:
+    return [regex_of(rule.match.rule, find_production) for rule in context.rules]
 
 
 # -- what a production becomes ---------------------------------------------
 
 
 def test_a_production_that_brackets_something_is_a_span():
-    _, parse = machine_of(LINES)
-    classify = Classifier(parse)
-    assert classify.of(parse.productions["Group"]) == SPAN
+    _, parse_target = build_machine_from_text(LINES)
+    classifier = Classifier(parse_target)
+    assert classifier.role_of(parse_target.productions["Group"]) == SPAN
 
 
 def test_a_production_that_runs_to_a_line_break_is_a_span():
-    _, parse = machine_of(LINES)
-    classify = Classifier(parse)
-    assert classify.of(parse.productions["Definition"]) == SPAN
+    _, parse_target = build_machine_from_text(LINES)
+    classifier = Classifier(parse_target)
+    assert classifier.role_of(parse_target.productions["Definition"]) == SPAN
 
 
 def test_a_styled_production_with_a_regular_form_is_a_token():
-    _, parse = machine_of(LINES)
-    classify = Classifier(parse)
-    assert classify.of(parse.productions["Marker"]) == TOKEN
+    _, parse_target = build_machine_from_text(LINES)
+    classifier = Classifier(parse_target)
+    assert classifier.role_of(parse_target.productions["Marker"]) == TOKEN
 
 
 def test_an_unclassed_production_is_transparent():
-    _, parse = machine_of(LINES)
-    classify = Classifier(parse)
-    assert classify.of(parse.productions["Items"]) == INLINE
+    _, parse_target = build_machine_from_text(LINES)
+    classifier = Classifier(parse_target)
+    assert classifier.role_of(parse_target.productions["Items"]) == INLINE
 
 
 # -- what a context holds ---------------------------------------------------
 
 
 def test_a_line_role_is_entered_by_its_marker_and_left_at_the_line_end():
-    machine, _ = machine_of(LINES)
-    start = context_of(machine, machine.start)
-    opening = [rule for rule in start.rules if rule.push]
-    assert [rule.styles for rule in opening] == [["Keyword"], ["Comment"]]
-    assert context_of(machine, opening[0].push).line_end == POP
+    machine, _ = build_machine_from_text(LINES)
+    start_context = context_of(machine, machine.start)
+    opening_rules = [rule for rule in start_context.rules if rule.push]
+    assert [rule.styles for rule in opening_rules] == [["Keyword"], ["Comment"]]
+    assert context_of(machine, opening_rules[0].push).line_end == POP
 
 
 def test_a_marker_is_a_keyword_only_where_a_line_may_open_with_one():
     """The whole point: `d` has no rule inside the line it opened."""
-    machine, parse = machine_of(LINES)
-    start = context_of(machine, machine.start)
-    inside = context_of(machine, next(r.push for r in start.rules if r.push))
-    assert "d" in patterns_of(start, parse.productions.get)
-    assert "d" not in patterns_of(inside, parse.productions.get)
+    machine, parse_target = build_machine_from_text(LINES)
+    start_context = context_of(machine, machine.start)
+    inside_context = context_of(
+        machine, next(rule.push for rule in start_context.rules if rule.push)
+    )
+    assert "d" in patterns_for_context(start_context, parse_target.productions.get)
+    assert "d" not in patterns_for_context(inside_context, parse_target.productions.get)
 
 
 def test_a_group_holds_what_its_own_lines_hold_and_no_more():
-    machine, parse = machine_of(LINES)
+    machine, parse_target = build_machine_from_text(LINES)
     group = context_of(machine, "Group")
-    assert "d" not in patterns_of(group, parse.productions.get)
+    assert "d" not in patterns_for_context(group, parse_target.productions.get)
     # It closes on its bracket rather than at the end of a line, so it nests.
     assert group.line_end == STAY
     assert [rule.pop for rule in group.rules if rule.pop] == [1]
 
 
 def test_a_span_that_colours_its_contents_keeps_the_style_on_the_context():
-    machine, _ = machine_of(LINES)
-    start = context_of(machine, machine.start)
-    comment = context_of(machine, [r.push for r in start.rules if r.push][1])
+    machine, _ = build_machine_from_text(LINES)
+    start_context = context_of(machine, machine.start)
+    comment = context_of(
+        machine, [rule.push for rule in start_context.rules if rule.push][1]
+    )
     assert comment.styles == ["Comment"]
 
 
 def test_a_marker_spelled_as_a_letter_matches_between_word_boundaries():
-    machine, _ = machine_of(LINES)
-    start = context_of(machine, machine.start)
-    marker, hash_rule = [rule for rule in start.rules if rule.push]
+    machine, _ = build_machine_from_text(LINES)
+    start_context = context_of(machine, machine.start)
+    marker, hash_rule = [rule for rule in start_context.rules if rule.push]
     assert marker.match.word_boundary
     assert not hash_rule.match.word_boundary
 
 
 def test_no_rule_of_a_context_can_match_nothing():
     """A zero-width rule makes no progress, so a context never holds one."""
-    machine, parse = machine_of(MGFF.read_text(encoding="utf-8"), str(MGFF))
+    machine, parse_target = build_machine_from_text(
+        MGFF.read_text(encoding="utf-8"), str(MGFF)
+    )
     for context in machine.contexts.values():
         for rule in context.rules:
             if not rule.match.look_ahead:
-                pattern = regex_of(rule.match.rule, parse.productions.get)
+                pattern = regex_of(rule.match.rule, parse_target.productions.get)
                 assert pattern != "" and pattern is not None
 
 
@@ -151,31 +164,39 @@ def test_no_rule_of_a_context_can_match_nothing():
 
 def test_a_role_reaching_past_its_line_carries_on_into_a_context_of_its_own():
     """A definition's alternative lines belong to the definition, not the scope."""
-    machine, parse = machine_of(MGFF.read_text(encoding="utf-8"), str(MGFF))
+    machine, parse_target = build_machine_from_text(
+        MGFF.read_text(encoding="utf-8"), str(MGFF)
+    )
     definition = context_of(machine, "Definition")
     assert definition.line_end not in (STAY, POP)
 
-    carried = context_of(machine, definition.line_end)
-    openings = [rule for rule in carried.rules if rule.push]
-    assert {rule.styles[0] for rule in openings} == {"ControlFlow", "Comment", "Operator"}
+    carried_context = context_of(machine, definition.line_end)
+    openings = [rule for rule in carried_context.rules if rule.push]
+    assert {rule.styles[0] for rule in openings} == {
+        "ControlFlow",
+        "Comment",
+        "Operator",
+    }
     # The scope below knows none of them: `|` is an alternative only here.
-    start = context_of(machine, machine.start)
-    assert "\\|" not in patterns_of(start, parse.productions.get)
+    start_context = context_of(machine, machine.start)
+    assert "\\|" not in patterns_for_context(
+        start_context, parse_target.productions.get
+    )
 
 
 def test_a_chain_is_left_by_a_line_it_does_not_recognise():
-    machine, _ = machine_of(MGFF.read_text(encoding="utf-8"), str(MGFF))
+    machine, _ = build_machine_from_text(MGFF.read_text(encoding="utf-8"), str(MGFF))
     definition = context_of(machine, "Definition")
-    carried = context_of(machine, definition.line_end)
-    leaving = [rule for rule in carried.rules if rule.match.look_ahead]
+    carried_context = context_of(machine, definition.line_end)
+    leaving_rules = [rule for rule in carried_context.rules if rule.match.look_ahead]
     # One rule, popping the chain and the definition it belongs to, and matching
     # nothing at all — the line is read again by whatever is underneath.
-    assert [rule.pop for rule in leaving] == [2]
+    assert [rule.pop for rule in leaving_rules] == [2]
 
 
 def test_a_bracketed_span_is_never_left_by_a_line_it_does_not_recognise():
     """It ends on its closing character, wherever that is."""
-    machine, _ = machine_of(MGFF.read_text(encoding="utf-8"), str(MGFF))
+    machine, _ = build_machine_from_text(MGFF.read_text(encoding="utf-8"), str(MGFF))
     for name in ("SubGroup", "ScopeGroup", "CommentGroup"):
         context = context_of(machine, name)
         assert not any(rule.match.look_ahead for rule in context.rules)
@@ -186,17 +207,19 @@ def test_a_bracketed_span_is_never_left_by_a_line_it_does_not_recognise():
 
 def test_two_places_leaving_the_same_thing_behind_are_one_context():
     """A scope group's lines are a file's lines, so they share their context."""
-    machine, _ = machine_of(MGFF.read_text(encoding="utf-8"), str(MGFF))
-    scope = context_of(machine, "ScopeGroup")
-    start = context_of(machine, machine.start)
-    pushed = {rule.push for rule in scope.rules if rule.push}
-    assert pushed == {rule.push for rule in start.rules if rule.push}
+    machine, _ = build_machine_from_text(MGFF.read_text(encoding="utf-8"), str(MGFF))
+    scope_context = context_of(machine, "ScopeGroup")
+    start_context = context_of(machine, machine.start)
+    pushed_context_names = {rule.push for rule in scope_context.rules if rule.push}
+    assert pushed_context_names == {
+        rule.push for rule in start_context.rules if rule.push
+    }
 
 
 @pytest.mark.parametrize("path", ["kate.mgff", "textmate.mgff"])
 def test_the_fixtures_build_a_machine(path):
     text = (Path(__file__).parent / "fixtures" / path).read_text(encoding="utf-8")
-    machine, _ = machine_of(text, path)
+    machine, _ = build_machine_from_text(text, path)
     assert machine.contexts
 
 
@@ -216,7 +239,7 @@ def test_a_recursive_token_does_not_send_the_walk_round_forever():
         "    d File = ( A )*\n"
         ")\n"
     )
-    machine, _ = machine_of(text)
+    machine, _ = build_machine_from_text(text)
     assert machine.contexts
 
 
@@ -235,7 +258,7 @@ def test_a_rule_leaving_more_behind_after_every_line_is_reported():
         ")\n"
     )
     with pytest.raises(GeneratorError, match="leaves more behind"):
-        machine_of(text)
+        build_machine_from_text(text)
 
 
 def test_a_production_is_classified_the_same_whoever_asks_first():
@@ -248,12 +271,17 @@ def test_a_production_is_classified_the_same_whoever_asks_first():
         ")\n"
     )
     model = resolve(lex_text(text, "<test>"), "<test>", KateGenerator().macros())
-    parse = model.target("Parse")
-    assert parse is not None
+    parse_target = model.target("Parse")
+    assert parse_target is not None
 
-    answers = []
-    for first in ("X", "Y"):
-        classify = Classifier(parse)
-        classify.of(parse.productions[first])
-        answers.append({n: classify.of(p) for n, p in parse.productions.items()})
-    assert answers[0] == answers[1]
+    roles_per_starting_production = []
+    for first_asked in ("X", "Y"):
+        classifier = Classifier(parse_target)
+        classifier.role_of(parse_target.productions[first_asked])
+        roles_per_starting_production.append(
+            {
+                name: classifier.role_of(production)
+                for name, production in parse_target.productions.items()
+            }
+        )
+    assert roles_per_starting_production[0] == roles_per_starting_production[1]

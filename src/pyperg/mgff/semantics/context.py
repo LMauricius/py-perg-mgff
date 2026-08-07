@@ -18,10 +18,10 @@ from typing import Protocol
 from ..grammar.scope import MacroSource, Scope
 
 
-class Resolver(Protocol):
+class DefinitionResolver(Protocol):
     """The part of the resolver a grammar's own definition calls back into."""
 
-    def call_defined(
+    def produce_defined_macro_call(
         self, source: MacroSource, context: CallContext, arguments: dict[str, object]
     ) -> object:
         """Produce the node a call of one of the grammar's definitions stands for."""
@@ -37,4 +37,4 @@ class CallContext:
     #: is substituted rather than linked, so this is what bounds the recursion.
     depth: int
     #: The resolver reading the target this call belongs to.
-    resolver: Resolver
+    resolver: DefinitionResolver

@@ -21,7 +21,7 @@ what may appear between them, and quietly widening a rule is worse than paying
 for an expression.
 
 The literal rows depend on **fusing**: MGFF spells a two-character token as two
-items, so `< =` is two single-character nodes until `utils.walk.fuse_literals`
+items, so `< =` is two single-character nodes until `utils.walk.merge_adjacent_literals`
 merges them. Everything from `DetectChar` to `StringDetect` is unreachable
 without that step.
 """
@@ -31,12 +31,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ...diagnostics.errors import GeneratorError
-from ...mgff.common.characters import character_set_of
+from ...mgff.common.characters import character_set_matched_by
 from ...mgff.common.rules import Rule, Repetition, Sequence
 from ...mgff.semantics.model import Production
 from ..utils.naming import NameAllocator, safe_identifier
 from ..utils.regex import regex_of
-from ..utils.walk import flatten, fuse_literals, literal_of
+from ..utils.walk import top_level_parts, merge_adjacent_literals, literal_of
 from ..utils.words import is_word, is_word_bounded
 from ..utils.xmlwrite import Element
 
@@ -76,7 +76,7 @@ class RuleContext:
     end_region: str | None = None
     look_ahead: bool = False
 
-    def applied_to(self, tag: str, **attributes: str | None) -> Element:
+    def rule_element(self, tag: str, **attributes: str | None) -> Element:
         """Build the rule element, with the shared attributes filled in."""
         return Element(
             tag,
@@ -104,13 +104,15 @@ class RuleBuilder:
         self.lists: dict[str, list[str]] = {}
         self.list_names = NameAllocator()
 
-    def lookup(self, name: str) -> Production | None:
+    def find_production(self, name: str) -> Production | None:
         """Find a production of the target being generated."""
         return self.productions.get(name)
 
     # -- whole productions -------------------------------------------------
 
-    def rules_for(self, production: Production, where: RuleContext) -> list[Element]:
+    def rules_for_production(
+        self, production: Production, rule_context: RuleContext
+    ) -> list[Element]:
         """Every rule a production needs, one per alternative.
 
         Several cheap rules beat one expression, so the alternatives are not
@@ -122,16 +124,19 @@ class RuleBuilder:
         if not alternatives:
             raise GeneratorError(f"production {production.name!r} matches nothing")
 
-        keywords = self.keyword_rule(alternatives, where, production.name)
+        keywords = self.keyword_rule(alternatives, rule_context, production.name)
         if keywords is not None:
             return [keywords]
 
         if production.choice_symbol == "|":
-            alternatives.sort(key=_literal_length, reverse=True)
-        return [self.rule_for(alternative, where) for alternative in alternatives]
+            alternatives.sort(key=_literal_length_of, reverse=True)
+        return [
+            self.cheapest_rule_for(alternative, rule_context)
+            for alternative in alternatives
+        ]
 
     def keyword_rule(
-        self, alternatives: list[Rule], where: RuleContext, name: str
+        self, alternatives: list[Rule], rule_context: RuleContext, name: str
     ) -> Element | None:
         """One `keyword` rule for a choice of plain words, or None.
 
@@ -149,36 +154,36 @@ class RuleBuilder:
         # written once and named the same everywhere.
         list_name = self.list_names.allocate(safe_identifier(name).lower(), key=name)
         self.lists.setdefault(list_name, [word for word in words if word is not None])
-        return where.applied_to("keyword", String=list_name)
+        return rule_context.rule_element("keyword", String=list_name)
 
     # -- single rules ------------------------------------------------------
 
-    def rule_for(self, node: Rule, where: RuleContext) -> Element:
+    def cheapest_rule_for(self, node: Rule, rule_context: RuleContext) -> Element:
         """The cheapest Kate rule matching a rule tree.
 
         Raises `GeneratorError` when the tree has no regular form, which for
         Kate means a production that reaches itself.
         """
-        fused = _fuse(node)
+        fused = _with_literals_merged(node)
 
         for attempt in (self.spaces_rule, self.literal_rule, self.any_char_rule):
-            rule = attempt(fused, where)
+            rule = attempt(fused, rule_context)
             if rule is not None:
                 return rule
 
-        pattern = regex_of(fused, self.lookup)
+        pattern = regex_of(fused, self.find_production)
         if pattern is None:
             raise GeneratorError(
                 "a rule that reaches itself cannot be matched by a single Kate rule; "
                 "Kate matches text with expressions, which cannot recurse"
             )
-        return where.applied_to("RegExpr", String=pattern)
+        return rule_context.rule_element("RegExpr", String=pattern)
 
-    def spaces_rule(self, node: Rule, where: RuleContext) -> Element | None:
+    def spaces_rule(self, node: Rule, rule_context: RuleContext) -> Element | None:
         """`DetectSpaces` for a run of whitespace of any length."""
         if not isinstance(node, Repetition) or node.minimum > 1:
             return None
-        characters = character_set_of(node.body)
+        characters = character_set_matched_by(node.body)
         if characters is None:
             return None
         if not all(
@@ -186,9 +191,9 @@ class RuleBuilder:
             for part in characters.parts
         ):
             return None
-        return where.applied_to("DetectSpaces")
+        return rule_context.rule_element("DetectSpaces")
 
-    def literal_rule(self, node: Rule, where: RuleContext) -> Element | None:
+    def literal_rule(self, node: Rule, rule_context: RuleContext) -> Element | None:
         """`DetectChar`, `Detect2Chars`, `WordDetect` or `StringDetect`."""
         literal = literal_of(node)
         if literal is None or not literal:
@@ -198,15 +203,17 @@ class RuleBuilder:
         if not is_xml_text(literal):
             return None
         if len(literal) == 1:
-            return where.applied_to("DetectChar", char=literal)
+            return rule_context.rule_element("DetectChar", char=literal)
         if len(literal) == 2:
-            return where.applied_to("Detect2Chars", char=literal[0], char1=literal[1])
+            return rule_context.rule_element(
+                "Detect2Chars", char=literal[0], char1=literal[1]
+            )
         tag = "WordDetect" if is_word_bounded(literal) else "StringDetect"
-        return where.applied_to(tag, String=literal)
+        return rule_context.rule_element(tag, String=literal)
 
-    def any_char_rule(self, node: Rule, where: RuleContext) -> Element | None:
+    def any_char_rule(self, node: Rule, rule_context: RuleContext) -> Element | None:
         """`AnyChar` for one character out of a fixed handful."""
-        characters = character_set_of(node)
+        characters = character_set_matched_by(node)
         if characters is None:
             return None
         parts = characters.parts
@@ -215,7 +222,7 @@ class RuleBuilder:
         listed = "".join(part.value for part in parts)
         if not is_xml_text(listed):
             return None
-        return where.applied_to("AnyChar", String=listed)
+        return rule_context.rule_element("AnyChar", String=listed)
 
     # -- keyword lists -----------------------------------------------------
 
@@ -225,21 +232,21 @@ class RuleBuilder:
         for name, words in self.lists.items():
             element = Element("list", {"name": name})
             for word in words:
-                element.leaf("item", word)
+                element.text_child("item", word)
             elements.append(element)
         return elements
 
 
-def _fuse(node: Rule) -> Rule:
+def _with_literals_merged(node: Rule) -> Rule:
     """Merge the single-character runs of a node, so literals become strings."""
-    parts = flatten(node)
+    parts = top_level_parts(node)
     if len(parts) < 2:
         return node
-    fused = fuse_literals(parts)
+    fused = merge_adjacent_literals(parts)
     return fused[0] if len(fused) == 1 else Sequence(fused)
 
 
-def _literal_length(node: Rule) -> int:
+def _literal_length_of(node: Rule) -> int:
     """How long the fixed string a node matches is, or -1 when it is not fixed."""
-    literal = literal_of(_fuse(node))
+    literal = literal_of(_with_literals_merged(node))
     return len(literal) if literal is not None else -1

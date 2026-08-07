@@ -22,7 +22,7 @@ from ..utils.styles import (
 )
 
 
-def style_for(styles: list[str]) -> tuple[str, str]:
+def item_data_for_styles(styles: list[str]) -> tuple[str, str]:
     """An itemData name and its `defStyleNum`, from a match's styles.
 
     The names are joined with `.` to name the itemData, so a theme can still tell

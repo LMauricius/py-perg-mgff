@@ -35,7 +35,7 @@ from ...mgff.semantics.model import Production
 VALID_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 
-def _one_name(production: Production, attribute: str) -> str:
+def _single_attribute_name(production: Production, attribute: str) -> str:
     """The single name one `store`/`push` argument list holds."""
     arguments = production.attributes[attribute]
     if len(arguments) != 1:
@@ -52,14 +52,14 @@ def _one_name(production: Production, attribute: str) -> str:
     return name
 
 
-def store_of(production: Production) -> str | None:
+def stored_field_of(production: Production) -> str | None:
     """The field a production's match is assigned to, or None when it is not."""
     if "store" not in production.attributes:
         return None
-    return _one_name(production, "store")
+    return _single_attribute_name(production, "store")
 
 
-def pushes_of(production: Production) -> list[str]:
+def pushed_list_names_of(production: Production) -> list[str]:
     """The lists a production's match is appended to; empty when it is not.
 
     A production may name several, so one match can reach a token list and a
@@ -72,10 +72,10 @@ def pushes_of(production: Production) -> list[str]:
         raise GeneratorError(
             f"`push` on {production.name!r} needs a list, as in `> push(tokens)`"
         )
-    return [_one_name_at(production, name) for name in arguments]
+    return [_checked_list_name(production, name) for name in arguments]
 
 
-def _one_name_at(production: Production, name: str) -> str:
+def _checked_list_name(production: Production, name: str) -> str:
     """One list name of a `push`, checked the way a field name is."""
     if not VALID_NAME.fullmatch(name):
         raise GeneratorError(

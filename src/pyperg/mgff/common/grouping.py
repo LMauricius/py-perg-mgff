@@ -18,7 +18,7 @@ import re
 
 from ..grammar.macros import MacroDefinition
 from ..grammar.shapes import MacroShape
-from ..grammar.signatures import shape
+from ..grammar.signatures import make_shape
 from ..lexing.cst import Item
 from ..semantics.context import CallContext
 from .rules import Choice, Rule, Repetition
@@ -37,29 +37,29 @@ CHOICE_MARKERS: frozenset[str] = frozenset({"|", "/"})
 # -- what each call carries -------------------------------------------------
 
 
-def _subgroup_args(item: Item, match: re.Match[str]) -> dict[str, object]:
+def _subgroup_call_arguments(item: Item, match: re.Match[str]) -> dict[str, object]:
     return {"body": item.groups[0]}
 
 
-def _repetition_args(item: Item, match: re.Match[str]) -> dict[str, object]:
+def _repetition_call_arguments(item: Item, match: re.Match[str]) -> dict[str, object]:
     return {"body": item.groups[0], "marker": match["marker"]}
 
 
-def _choice_args(item: Item, match: re.Match[str]) -> dict[str, object]:
+def _choice_call_arguments(item: Item, match: re.Match[str]) -> dict[str, object]:
     return {"options": item.groups, "symbol": match["symbol"]}
 
 
 # -- the shapes -------------------------------------------------------------
 
-SUBGROUP_SHAPE: MacroShape = shape("subgroup", r"\(\)", _subgroup_args)
+SUBGROUP_SHAPE: MacroShape = make_shape("subgroup", r"\(\)", _subgroup_call_arguments)
 
-REPETITION_SHAPE: MacroShape = shape(
-    "repetition", r"\(\)(?P<marker>[+*?])", _repetition_args
+REPETITION_SHAPE: MacroShape = make_shape(
+    "repetition", r"\(\)(?P<marker>[+*?])", _repetition_call_arguments
 )
 
 #: The separators must all be the same one, which is what the backreference says.
-CHOICE_SHAPE: MacroShape = shape(
-    "choice", r"\(\)(?P<symbol>[|/])\(\)(?:(?P=symbol)\(\))*", _choice_args
+CHOICE_SHAPE: MacroShape = make_shape(
+    "choice", r"\(\)(?P<symbol>[|/])\(\)(?:(?P=symbol)\(\))*", _choice_call_arguments
 )
 
 

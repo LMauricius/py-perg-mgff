@@ -39,7 +39,7 @@ _HEX_DIGITS = set("0123456789abcdefABCDEF")
 _NAME_CHARS = set("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_")
 
 
-def _code_point(value: int) -> str:
+def _character_for_code_point(value: int) -> str:
     """Turn a numeric escape's value into a character, rejecting the invalid range."""
     if value > 0x10FFFF:
         raise LexError(
@@ -77,7 +77,7 @@ def read_escape(text: str, index: int) -> tuple[str, int]:
         digits = text[index + 2 : index + 2 + count]
         if len(digits) < count or any(d not in _HEX_DIGITS for d in digits):
             raise LexError(f"\\{kind} needs exactly {count} hexadecimal digits")
-        return _code_point(int(digits, 16)), index + 2 + count
+        return _character_for_code_point(int(digits, 16)), index + 2 + count
 
     # \<NAME>: a Unicode character name, upper case with _ for each space.
     if kind == "<":
@@ -106,7 +106,7 @@ def read_escape(text: str, index: int) -> tuple[str, int]:
     raise LexError(f"unknown escape \\{kind}")
 
 
-def escape_char(char: str) -> str:
+def escape_character(char: str) -> str:
     """Render a character back into MGFF text, escaping it where required."""
     for form, produced in SIMPLE_ESCAPES.items():
         if char == produced:

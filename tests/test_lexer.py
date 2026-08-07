@@ -11,7 +11,7 @@ from pyperg.mgff.lexing.lexer import lex_text
 FIXTURE = Path(__file__).parent / "fixtures" / "calc.mgff"
 
 
-def items(text: str):
+def items_of_single_line(text: str):
     """The items of a single-line source."""
     file = lex_text(text)
     assert len(file.lines) == 1
@@ -20,14 +20,14 @@ def items(text: str):
 
 def test_five_items_of_the_specification_example():
     """`d Number = Int ( . ( Digit )+ )?` is five items, the last one glued."""
-    line = items("    d Number = Int ( . ( Digit )+ )?")
-    assert [i.text for i in line] == ["d", "Number", "=", "Int", "?"]
-    assert line[-1].groups  # the text "?" is glued to a group
+    line_items = items_of_single_line("    d Number = Int ( . ( Digit )+ )?")
+    assert [item.text for item in line_items] == ["d", "Number", "=", "Int", "?"]
+    assert line_items[-1].groups  # the text "?" is glued to a group
 
 
 def test_space_outside_parentheses_separates():
     """`< =` is two items; the separating space is outside any group."""
-    assert [i.text for i in items("< =")] == ["<", "="]
+    assert [item.text for item in items_of_single_line("< =")] == ["<", "="]
 
 
 def test_group_spans_lines():
@@ -39,9 +39,9 @@ def test_group_spans_lines():
 
 
 def test_item_alternates_text_and_groups():
-    item = items("sep(R)by(S)")[0]
+    item = items_of_single_line("sep(R)by(S)")[0]
     assert item.text == "sepby"
-    assert [type(p) for p in item.parts] == [Text, Group, Text, Group]
+    assert [type(part) for part in item.parts] == [Text, Group, Text, Group]
 
 
 def test_two_adjacent_groups_are_an_error():
@@ -56,18 +56,18 @@ def test_unbalanced_parentheses(text):
 
 
 def test_escaped_parenthesis_is_text():
-    item = items(r"\(")[0]
+    item = items_of_single_line(r"\(")[0]
     assert item.text == "("
     assert not item.groups
 
 
-def test_blank_lines_carry_no_items():
+def test_blank_lines_carry_no_items_of_single_line():
     file = lex_text("d a = b\n\n   \t \nd c = d")
     assert [line.is_blank for line in file.lines] == [False, True, True, False]
 
 
 def test_spans_point_at_the_source():
-    item = items("  Digit")[0]
+    item = items_of_single_line("  Digit")[0]
     assert (item.span.start.line, item.span.start.column) == (1, 3)
     assert item.span.end.column == 8
 
@@ -81,13 +81,16 @@ def test_error_carries_a_span():
 
 def test_appendix_example_lexes():
     file = lex_text(FIXTURE.read_text(encoding="utf-8"), FIXTURE.name)
-    tops = [line.items[0].text for line in file.lines if not line.is_blank]
-    assert tops.count("t") == 2  # the Lex and Parse targets
-    assert "d" in tops  # the top-level sep(R)by(S) macro
+    first_item_texts = [line.items[0].text for line in file.lines if not line.is_blank]
+    assert first_item_texts.count("t") == 2  # the Lex and Parse targets
+    assert "d" in first_item_texts  # the top-level sep(R)by(S) macro
 
 
 def test_render_round_trips_an_item():
-    assert render_item(items("sep(Ident = Expr)by(,)")[0]) == "sep(Ident = Expr)by(,)"
+    assert (
+        render_item(items_of_single_line("sep(Ident = Expr)by(,)")[0])
+        == "sep(Ident = Expr)by(,)"
+    )
 
 
 def test_nesting_has_a_limit():

@@ -22,19 +22,19 @@ class SourceFile:
     line_starts: list[int] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
-        starts = [0]
-        for i, ch in enumerate(self.text):
-            if ch == "\n":
-                starts.append(i + 1)
-        self.line_starts = starts
+        line_start_offsets = [0]
+        for i, character in enumerate(self.text):
+            if character == "\n":
+                line_start_offsets.append(i + 1)
+        self.line_starts = line_start_offsets
 
     @staticmethod
-    def read(path: str | Path) -> SourceFile:
+    def read_from_path(path: str | Path) -> SourceFile:
         """Load a file as UTF-8."""
         path = Path(path)
         return SourceFile(str(path), path.read_text(encoding="utf-8"))
 
-    def position(self, offset: int) -> Position:
+    def position_at_offset(self, offset: int) -> Position:
         """The line/column of an offset. Both are 1-based."""
         # Binary search for the last line start at or before `offset`.
         lo, hi = 0, len(self.line_starts) - 1
@@ -46,7 +46,7 @@ class SourceFile:
                 hi = mid - 1
         return Position(offset, lo + 1, offset - self.line_starts[lo] + 1)
 
-    def line_text(self, line: int) -> str:
+    def text_of_line(self, line: int) -> str:
         """The text of a 1-based line number, without its terminator."""
         if not 1 <= line <= len(self.line_starts):
             return ""
@@ -54,10 +54,10 @@ class SourceFile:
         end = self.line_starts[line] if line < len(self.line_starts) else len(self.text)
         return self.text[start:end].rstrip("\r\n")
 
-    def excerpt(self, span: Span) -> str:
+    def excerpt_with_caret(self, span: Span) -> str:
         """The source line of `span.start` with a caret run under the span."""
-        line = self.line_text(span.start.line)
-        width = 1
+        line = self.text_of_line(span.start.line)
+        caret_count = 1
         if span.end.line == span.start.line:
-            width = max(1, span.end.column - span.start.column)
-        return f"{line}\n{' ' * (span.start.column - 1)}{'^' * width}"
+            caret_count = max(1, span.end.column - span.start.column)
+        return f"{line}\n{' ' * (span.start.column - 1)}{'^' * caret_count}"

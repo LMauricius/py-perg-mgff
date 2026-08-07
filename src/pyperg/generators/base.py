@@ -5,7 +5,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from pathlib import Path
 
-from ..mgff.common.order import rule_tree_macros
+from ..mgff.common.order import rule_tree_macro_order
 from ..mgff.grammar.macros import Macro, MacroDefinition
 from ..mgff.semantics.model import GrammarModel
 
@@ -35,11 +35,11 @@ class Generator(ABC):
 
         A backend that gives a shape a meaning of its own — a capture group, say
         — returns its definition here, and reads the calls back as a `MacroCall`
-        naming it. Where they sit in the order is settled by `rule_tree_macros`:
+        naming it. Where they sit in the order is settled by `rule_tree_macro_order`:
         above every name, alongside `( R )+`.
         """
         return []
 
     def macros(self) -> list[Macro]:
         """The definitions in force while a grammar is read for this backend."""
-        return rule_tree_macros(self.extra_macros())
+        return rule_tree_macro_order(self.extra_macros())

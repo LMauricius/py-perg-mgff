@@ -49,16 +49,20 @@ import sys
 from ...mgff.common.rules import Reference
 from ...mgff.semantics.model import GrammarModel, Production, Target
 from ..utils.styles import styles_of
-from ..utils.highlight import token_order
+from ..utils.highlight import token_names_in_order
 from ..utils.machine import POP
 from ..utils.machine import Context as MachineContext
 from ..utils.machine import ContextRule as MachineRule
 from ..utils.machine import MachineBuilder
-from ..utils.pipeline import productions_of, resolve_over, stages_of
-from ..utils.walk import literal_of, nullable
+from ..utils.pipeline import (
+    all_productions_of_stages,
+    rewrite_terminals_as_calls,
+    highlight_stages_of,
+)
+from ..utils.walk import literal_of, can_match_empty
 from ..utils.xmlwrite import Element
 from .rules import RuleBuilder, RuleContext
-from .styles import FALLBACK_STYLE, style_for
+from .styles import FALLBACK_STYLE, item_data_for_styles
 
 #: The one context a grammar of a single phase amounts to. A grammar of more
 #: names its contexts after the productions they came from.
@@ -68,23 +72,23 @@ TOKENS_CONTEXT = "Tokens"
 # -- styles ----------------------------------------------------------------
 
 
-class ItemDatas:
+class StyleAttributeTable:
     """The styles the generated file declares, in the order they were needed."""
 
     def __init__(self) -> None:
         self.styles: dict[str, str] = {FALLBACK_STYLE: f"ds{FALLBACK_STYLE}"}
 
-    def attribute_for(self, production: Production) -> str:
+    def attribute_for_production(self, production: Production) -> str:
         """Register a production's style and return the itemData's name."""
-        return self.for_styles(styles_of(production))
+        return self.attribute_for_styles(styles_of(production))
 
-    def for_styles(self, styles: list[str]) -> str:
+    def attribute_for_styles(self, styles: list[str]) -> str:
         """Register a set of styles and return the itemData's name."""
-        name, default_style = style_for(styles or [FALLBACK_STYLE])
+        name, default_style = item_data_for_styles(styles or [FALLBACK_STYLE])
         self.styles.setdefault(name, default_style)
         return name
 
-    def elements(self) -> list[Element]:
+    def item_data_elements(self) -> list[Element]:
         """The `<itemData>` elements, one per style."""
         return [
             Element("itemData", {"name": name, "defStyleNum": default_style})
@@ -106,22 +110,22 @@ class ContextBuilder:
         #: The phases, first to last. A terminal of a phase reading a list of
         #: earlier matches is rewritten as a call on the match it names, which
         #: has to happen before anything reads a rule tree.
-        self.stages = stages_of(model)
+        self.stages = highlight_stages_of(model)
         for stage in self.stages:
-            resolve_over(stage)
-        self.last = self.stages[-1]
+            rewrite_terminals_as_calls(stage)
+        self.last_stage = self.stages[-1]
         #: The phase whose order decides which match wins where several could.
-        self.before = self.last.previous
+        self.stage_before_last = self.last_stage.previous
 
-        self.item_datas = ItemDatas()
+        self.style_attributes = StyleAttributeTable()
         self.contexts: list[Element] = []
         #: The expressions of the phase before the last, which a grammar of a
         #: single phase uses on its own.
         self.before_rules = RuleBuilder(
-            (self.before or self.last).target.productions
+            (self.stage_before_last or self.last_stage).target.productions
         )
         #: The rules of the machine's contexts, which reach across every phase.
-        self.machine_rules = RuleBuilder(productions_of(self.stages))
+        self.machine_rules = RuleBuilder(all_productions_of_stages(self.stages))
 
     # -- the whole set -----------------------------------------------------
 
@@ -134,18 +138,18 @@ class ContextBuilder:
         else. A grammar of one phase is a machine of a single context, and is
         built straight from that phase's order.
         """
-        if self.before is not None:
+        if self.stage_before_last is not None:
             self.build_machine()
         else:
-            self.build_tokens_context(self.last.target)
+            self.build_tokens_context(self.last_stage.target)
 
     # -- the machine -------------------------------------------------------
 
     def build_machine(self) -> None:
         """Spell every context of the machine derived from the last phase."""
-        assert self.before is not None
+        assert self.stage_before_last is not None
         machine = MachineBuilder(
-            self.last.target, token_order(self.before.target)
+            self.last_stage.target, token_names_in_order(self.stage_before_last.target)
         ).build()
         # The context a document starts in comes first, which is how Kate reads
         # a definition: the first context listed is the initial one.
@@ -158,9 +162,9 @@ class ContextBuilder:
 
     def build_context(self, context: MachineContext) -> None:
         """One context of the machine, with its rules in the order they are tried."""
-        element = self.context(
+        element = self.start_context_element(
             context.name,
-            attribute=self.item_datas.for_styles(context.styles),
+            attribute=self.style_attributes.attribute_for_styles(context.styles),
             lineEndContext=context.line_end,
         )
         for rule in context.rules:
@@ -178,8 +182,8 @@ class ContextBuilder:
         only between word boundaries — the `Lu` of `Lucky` is not a category.
         Anything else is one expression.
         """
-        where = RuleContext(
-            attribute=self.item_datas.for_styles(rule.styles),
+        rule_context = RuleContext(
+            attribute=self.style_attributes.attribute_for_styles(rule.styles),
             context=rule.push or (POP * rule.pop if rule.pop else None),
             begin_region=rule.region if rule.push else None,
             end_region=rule.region if rule.pop and not rule.push else None,
@@ -190,26 +194,26 @@ class ContextBuilder:
             # keeps the `d` of `Digit` from opening a definition.
             literal = literal_of(rule.match.rule)
             if literal:
-                return [where.applied_to("WordDetect", String=literal)]
+                return [rule_context.rule_element("WordDetect", String=literal)]
         called = self.called_production(rule)
         if called is not None:
-            return self.machine_rules.rules_for(called, where)
-        return [self.machine_rules.rule_for(rule.match.rule, where)]
+            return self.machine_rules.rules_for_production(called, rule_context)
+        return [self.machine_rules.cheapest_rule_for(rule.match.rule, rule_context)]
 
     def called_production(self, rule: MachineRule) -> Production | None:
         """The production a plain match rule calls, when that is all it does."""
         if rule.push or rule.pop or rule.match.look_ahead:
             return None
         if isinstance(rule.match.rule, Reference):
-            return self.machine_rules.lookup(rule.match.rule.name)
+            return self.machine_rules.find_production(rule.match.rule.name)
         return None
 
-    def elements(self) -> tuple[list[Element], list[Element], list[Element]]:
+    def built_elements(self) -> tuple[list[Element], list[Element], list[Element]]:
         """The contexts, the item data and the keyword lists."""
         lists = self.before_rules.list_elements() + self.machine_rules.list_elements()
-        return self.contexts, self.item_datas.elements(), lists
+        return self.contexts, self.style_attributes.item_data_elements(), lists
 
-    def context(self, name: str, **attributes: str | None) -> Element:
+    def start_context_element(self, name: str, **attributes: str | None) -> Element:
         """Start a context, filling in the attributes every one of ours carries."""
         element = Element(
             "context",
@@ -217,7 +221,11 @@ class ContextBuilder:
                 "name": name,
                 "attribute": FALLBACK_STYLE,
                 "lineEndContext": "#stay",
-                **{key: value for key, value in attributes.items() if value is not None},
+                **{
+                    key: value
+                    for key, value in attributes.items()
+                    if value is not None
+                },
             },
         )
         self.contexts.append(element)
@@ -232,18 +240,22 @@ class ContextBuilder:
         every rule of a context at each position, and one matching no characters
         colours nothing however often it fires.
         """
-        element = self.context(TOKENS_CONTEXT)
-        for name in token_order(target):
+        element = self.start_context_element(TOKENS_CONTEXT)
+        for name in token_names_in_order(target):
             production = target.productions[name]
-            if nullable(production.rule, self.before_rules.lookup):
+            if can_match_empty(production.rule, self.before_rules.find_production):
                 print(
                     f"pyperg: kate: token {production.name!r} can match the empty "
                     "string, so it is left out; a zero-width rule highlights nothing.",
                     file=sys.stderr,
                 )
                 continue
-            where = RuleContext(attribute=self.item_datas.attribute_for(production))
-            element.children.extend(self.before_rules.rules_for(production, where))
+            rule_context = RuleContext(
+                attribute=self.style_attributes.attribute_for_production(production)
+            )
+            element.children.extend(
+                self.before_rules.rules_for_production(production, rule_context)
+            )
 
     # -- Parse -------------------------------------------------------------
 

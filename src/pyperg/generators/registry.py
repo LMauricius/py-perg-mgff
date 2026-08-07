@@ -32,20 +32,20 @@ BUILTIN_GENERATORS: dict[str, str] = {
 }
 
 
-def _load(reference: str) -> type[Generator]:
+def _load_generator_class(reference: str) -> type[Generator]:
     """Import a `module:attribute` reference."""
     module_name, _, attribute = reference.partition(":")
     return getattr(import_module(module_name), attribute)
 
 
-def available() -> dict[str, type[Generator]]:
+def available_generators() -> dict[str, type[Generator]]:
     """Every backend that can be loaded, by name.
 
     Installed entry points win over the built-in fallbacks, so a package may
     replace a built-in backend with its own.
     """
     found: dict[str, type[Generator]] = {
-        name: _load(reference) for name, reference in BUILTIN_GENERATORS.items()
+        name: _load_generator_class(reference) for name, reference in BUILTIN_GENERATORS.items()
     }
     for entry in entry_points(group=ENTRY_POINT_GROUP):
         try:
@@ -55,9 +55,9 @@ def available() -> dict[str, type[Generator]]:
     return found
 
 
-def get(name: str) -> Generator:
+def load_generator(name: str) -> Generator:
     """Instantiate a backend by name."""
-    backends = available()
+    backends = available_generators()
     if name not in backends:
         known = ", ".join(sorted(backends)) or "none"
         raise GeneratorError(f"unknown generator {name!r}; available: {known}")

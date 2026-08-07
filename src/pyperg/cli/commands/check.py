@@ -14,7 +14,7 @@ from ...mgff.lexing.lexer import lex
 from .base import Command
 
 
-def _count(scope: Scope) -> tuple[int, int]:
+def _count_macros_and_targets(scope: Scope) -> tuple[int, int]:
     """The macros and targets of a scope tree, counting each definition once."""
     macros = sum(1 for macro in scope.sources.values() if macro.scope is scope)
     targets = len(scope.targets)
@@ -22,7 +22,7 @@ def _count(scope: Scope) -> tuple[int, int]:
         # Skip what a prefix scope handed up; it is counted where it was defined.
         if child.parent is not scope:
             continue
-        child_macros, child_targets = _count(child)
+        child_macros, child_targets = _count_macros_and_targets(child)
         macros += child_macros
         targets += child_targets
     return macros, targets
@@ -37,9 +37,9 @@ class CheckCommand(Command):
 
     def run(self, cli_args: argparse.Namespace) -> int:
         # Errors of either part are raised here and reported by `cli.main`.
-        source = SourceFile.read(cli_args.file)
+        source = SourceFile.read_from_path(cli_args.file)
         root = parse(lex(source))
 
-        macros, targets = _count(root)
+        macros, targets = _count_macros_and_targets(root)
         print(f"{source.name}: ok, {macros} macros, {targets} targets")
         return 0

@@ -9,28 +9,32 @@ particular grammar defines.
 line answers to. Its pattern is the head's signature matched exactly, and its
 dictionary binds each argument to the parameter it fills.
 
-The alphabet and the `shape` builder are shared. `mgff.common` writes its own
+The alphabet and the `make_shape` builder are shared. `mgff.common` writes its own
 shapes from them — `( R )+`, a character set, and the two "any name at all"
-filters a `Scoped` entry consults a scope through.
+filters a `ScopeLookupPoint` entry consults a scope through.
 """
 
 from __future__ import annotations
 
 import re
 
-from ..lexing.cst import Item, arguments_of
-from .shapes import ExtractArgs, MacroShape
+from ..lexing.cst import Item, call_arguments_of
+from .shapes import ExtractArguments, MacroShape
 
 
-def shape(name: str, pattern: str, extract_args: ExtractArgs) -> MacroShape:
+def make_shape(
+    name: str, pattern: str, extract_arguments: ExtractArguments
+) -> MacroShape:
     """Define a shape, compiling its pattern.
 
     The pattern is matched against a whole signature, so it needs no anchors.
     """
-    return MacroShape(name=name, pattern=re.compile(pattern), extract_args=extract_args)
+    return MacroShape(
+        name=name, pattern=re.compile(pattern), extract_arguments=extract_arguments
+    )
 
 
-def no_args(item: Item, match: re.Match[str]) -> dict[str, object]:
+def extracts_nothing(item: Item, match: re.Match[str]) -> dict[str, object]:
     """The extractor of a shape whose calls carry nothing."""
     return {}
 
@@ -50,7 +54,7 @@ ARGUMENTS_PATTERN = rf"{NAME_PATTERN}(?:\(\){NAME_PATTERN})+"
 # -- the shape of a grammar's own definition -------------------------------
 
 
-def signature_to_shape(signature: str, parameters: list[str]) -> MacroShape:
+def definition_shape(signature: str, parameters: list[str]) -> MacroShape:
     """The shape a `d Head = Body` line answers to.
 
     The pattern is the head's signature, matched exactly, and the dictionary
@@ -60,15 +64,15 @@ def signature_to_shape(signature: str, parameters: list[str]) -> MacroShape:
     The arguments come from the item alone, and `match` is deliberately unused: a
     definition is selected by looking its name up, not by matching this pattern,
     and the two need not even agree. A prefix scope files `pair` under
-    `Util_pair`, so the match handed over is the one from the `Scoped` filter
+    `Util_pair`, so the match handed over is the one from the `ScopeLookupPoint` filter
     that found it.
     """
 
-    def extract_args(item: Item, match: re.Match[str]) -> dict[str, object]:
-        return dict(zip(parameters, arguments_of(item)))
+    def extract_arguments(item: Item, match: re.Match[str]) -> dict[str, object]:
+        return dict(zip(parameters, call_arguments_of(item)))
 
     return MacroShape(
         name=signature,
         pattern=re.compile(re.escape(signature)),
-        extract_args=extract_args,
+        extract_arguments=extract_arguments,
     )

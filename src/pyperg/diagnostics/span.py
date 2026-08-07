@@ -25,7 +25,7 @@ class Span:
     end: Position
 
     @staticmethod
-    def between(start: Span, end: Span) -> Span:
+    def covering_both(start: Span, end: Span) -> Span:
         """The span covering both operands and everything in between."""
         return Span(start.start, end.end)
 

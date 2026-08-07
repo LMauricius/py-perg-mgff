@@ -36,26 +36,26 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ...diagnostics.errors import GeneratorError
-from ...mgff.common.characters import character_set_of
+from ...mgff.common.characters import character_set_matched_by
 from ...mgff.common.rules import Choice, Reference, Rule
-from ...mgff.lexing.escapes import escape_char
+from ...mgff.lexing.escapes import escape_character
 from ...mgff.semantics.model import GrammarModel, Production, Target
-from .classes import classes_of
-from .settings import setting
-from .streams import pushes_of
-from .walk import references, rewrite
+from .classes import match_classes_of
+from .settings import setting_value
+from .streams import pushed_list_names_of
+from .walk import referenced_production_names, rewrite_rule_tree
 
 #: The phase every backend reading a chain of them ends at.
 FINAL_TARGET = "Parse"
 
 
 @dataclass(slots=True)
-class Stage:
+class HighlightStage:
     """One phase of the chain, and what it reads."""
 
     target: Target
     #: The phase before this one, None for the one that reads text.
-    previous: "Stage | None" = None
+    previous: "HighlightStage | None" = None
     #: The list this phase matches over, None when it matches characters.
     over: str | None = None
 
@@ -68,7 +68,7 @@ class Stage:
 # -- building the chain ------------------------------------------------------
 
 
-def stages_of(model: GrammarModel) -> list[Stage]:
+def highlight_stages_of(model: GrammarModel) -> list[HighlightStage]:
     """Every phase of the grammar, first to last, ending at `Parse`.
 
     Raises `GeneratorError` on a chain that is no chain: a `post` naming a target
@@ -82,10 +82,10 @@ def stages_of(model: GrammarModel) -> list[Stage]:
             "`t Name ( … )`, and the last one is called `Parse`"
         )
 
-    order = _chain(model)
-    stages: list[Stage] = []
+    order = _targets_in_phase_order(model)
+    stages: list[HighlightStage] = []
     for target in order:
-        over = setting(target.attributes, "over")
+        over = setting_value(target.attributes, "over")
         previous = stages[-1] if stages else None
         if over is not None and previous is None:
             raise GeneratorError(
@@ -93,7 +93,7 @@ def stages_of(model: GrammarModel) -> list[Stage]:
                 "first phase reads the text itself; drop `over`, or give it a "
                 "`post(…)` naming the phase that fills that list"
             )
-        stages.append(Stage(target=target, previous=previous, over=over))
+        stages.append(HighlightStage(target=target, previous=previous, over=over))
 
     if stages[-1].target.name != FINAL_TARGET:
         raise GeneratorError(
@@ -104,13 +104,13 @@ def stages_of(model: GrammarModel) -> list[Stage]:
     return stages
 
 
-def _chain(model: GrammarModel) -> list[Target]:
+def _targets_in_phase_order(model: GrammarModel) -> list[Target]:
     """The targets ordered by their `post` attributes, first to last."""
     by_name = {target.name: target for target in model.targets}
     # Who each target follows, and — read the other way — who follows it.
     follows: dict[str, str] = {}
     for target in model.targets:
-        after = setting(target.attributes, "post")
+        after = setting_value(target.attributes, "post")
         if after is None:
             continue
         if after not in by_name:
@@ -159,7 +159,7 @@ def _chain(model: GrammarModel) -> list[Target]:
     return ordered
 
 
-def productions_of(stages: list[Stage]) -> dict[str, Production]:
+def all_productions_of_stages(stages: list[HighlightStage]) -> dict[str, Production]:
     """Every phase's productions in one table, later phases winning a clash.
 
     A phase reaching back into an earlier one resolves the name there, so the
@@ -175,18 +175,18 @@ def productions_of(stages: list[Stage]) -> dict[str, Production]:
 # -- matching a list of earlier matches --------------------------------------
 
 
-def pushed_to(stage: Stage, list_name: str) -> list[Production]:
+def productions_pushing_to(stage: HighlightStage, list_name: str) -> list[Production]:
     """The previous phase's productions that append themselves to a list."""
     if stage.previous is None:
         return []
     return [
         production
         for production in stage.previous.target.productions.values()
-        if list_name in pushes_of(production)
+        if list_name in pushed_list_names_of(production)
     ]
 
 
-def resolve_over(stage: Stage) -> None:
+def rewrite_terminals_as_calls(stage: HighlightStage) -> None:
     """Rewrite a phase's terminals as calls on the matches they name.
 
     Only a phase with `over(…)` has anything to do here. Every terminal of it is
@@ -205,11 +205,11 @@ def resolve_over(stage: Stage) -> None:
     if stage.over is None or stage.previous is None:
         return
 
-    by_class = _by_class(stage, stage.over)
+    by_class = _productions_by_class(stage, stage.over)
     reached: set[str] = set()
 
     def replace(node: Rule) -> Rule | None:
-        characters = character_set_of(node)
+        characters = character_set_matched_by(node)
         if characters is None:
             return None
         character = characters.single_character
@@ -222,7 +222,7 @@ def resolve_over(stage: Stage) -> None:
         # A class is the text it was written as, so a character is looked up by
         # the way MGFF spells it: the class of `\(` is written `\(`, since a
         # bare bracket would open a group.
-        written = escape_char(character)
+        written = escape_character(character)
         found = by_class.get(written) or by_class.get(character)
         if not found:
             raise GeneratorError(
@@ -240,21 +240,21 @@ def resolve_over(stage: Stage) -> None:
         if production.origin != stage.target.name:
             continue
         production.alternatives = [
-            rewrite(alternative, replace) for alternative in production.alternatives
+            rewrite_rule_tree(alternative, replace) for alternative in production.alternatives
         ]
-    _absorb(stage, reached)
+    _copy_reached_productions(stage, reached)
 
 
-def _by_class(stage: Stage, list_name: str) -> dict[str, list[str]]:
+def _productions_by_class(stage: HighlightStage, list_name: str) -> dict[str, list[str]]:
     """Which productions of the previous phase answer to each class."""
     found: dict[str, list[str]] = {}
-    for production in pushed_to(stage, list_name):
-        for name in classes_of(production):
+    for production in productions_pushing_to(stage, list_name):
+        for name in match_classes_of(production):
             found.setdefault(name, []).append(production.name)
     return found
 
 
-def _absorb(stage: Stage, names: set[str]) -> None:
+def _copy_reached_productions(stage: HighlightStage, names: set[str]) -> None:
     """Copy productions of the previous phase into this one, with what they reach."""
     assert stage.previous is not None
     source = stage.previous.target.productions
@@ -265,4 +265,4 @@ def _absorb(stage: Stage, names: set[str]) -> None:
             continue
         production = source[name]
         stage.target.productions[name] = production
-        pending.extend(references(production.rule))
+        pending.extend(referenced_production_names(production.rule))

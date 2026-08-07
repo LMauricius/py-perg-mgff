@@ -13,7 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from ...diagnostics.span import Span
-from .escapes import escape_char
+from .escapes import escape_character
 
 
 @dataclass(slots=True)
@@ -46,17 +46,17 @@ class Item:
     @property
     def text(self) -> str:
         """The item's text with its groups removed, e.g. `sep()by()` -> `sepby`."""
-        return "".join(p.value for p in self.parts if isinstance(p, Text))
+        return "".join(part.value for part in self.parts if isinstance(part, Text))
 
     @property
     def groups(self) -> list[Group]:
         """The item's groups, in order."""
-        return [p for p in self.parts if isinstance(p, Group)]
+        return [part for part in self.parts if isinstance(part, Group)]
 
     @property
     def is_bare_text(self) -> bool:
         """True when the item is text with no groups, e.g. `Digit`."""
-        return bool(self.parts) and all(isinstance(p, Text) for p in self.parts)
+        return bool(self.parts) and all(isinstance(part, Text) for part in self.parts)
 
     @property
     def is_bare_group(self) -> bool:
@@ -113,7 +113,7 @@ def signature_of(item: Item) -> str:
     return "".join(out)
 
 
-def group_items(group: Group) -> list[Item]:
+def items_in_group(group: Group) -> list[Item]:
     """Every item of a group, its lines joined into one sequence.
 
     The line breaks inside a group are a matter of layout, so a subgroup and a
@@ -122,9 +122,9 @@ def group_items(group: Group) -> list[Item]:
     return [item for line in group.lines for item in line.items]
 
 
-def arguments_of(item: Item) -> list[list[Item]]:
+def call_arguments_of(item: Item) -> list[list[Item]]:
     """The argument of each group of a call, as a sequence of items."""
-    return [group_items(group) for group in item.groups]
+    return [items_in_group(group) for group in item.groups]
 
 
 def render_item(item: Item) -> str:
@@ -132,10 +132,10 @@ def render_item(item: Item) -> str:
     out: list[str] = []
     for part in item.parts:
         if isinstance(part, Text):
-            out.append("".join(escape_char(c) for c in part.value))
+            out.append("".join(escape_character(c) for c in part.value))
         else:
             inner = " ".join(
-                " ".join(render_item(i) for i in line.items)
+                " ".join(render_item(inner_item) for inner_item in line.items)
                 for line in part.lines
                 if not line.is_blank
             )

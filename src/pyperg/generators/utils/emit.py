@@ -18,12 +18,12 @@ class Emitter:
         self.depth = 0
         self.lines: list[str] = []
 
-    def line(self, text: str = "") -> None:
+    def write_line(self, text: str = "") -> None:
         """Write one line at the current depth; an empty line stays empty."""
         self.lines.append(f"{self.indent * self.depth}{text}" if text else "")
 
     @contextmanager
-    def nested(self) -> Iterator[None]:
+    def indented(self) -> Iterator[None]:
         """Write the lines of the block one level deeper."""
         self.depth += 1
         try:

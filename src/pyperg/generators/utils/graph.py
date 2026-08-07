@@ -9,10 +9,10 @@ say — rejects the cycles and inlines the rest.
 from __future__ import annotations
 
 from ...mgff.semantics.model import Production
-from .walk import references
+from .walk import referenced_production_names
 
 
-def reference_graph(productions: dict[str, Production]) -> dict[str, list[str]]:
+def production_call_graph(productions: dict[str, Production]) -> dict[str, list[str]]:
     """Each production's callees, in order, with repeats removed.
 
     A reference to a name the table does not hold is dropped: the target reached
@@ -21,14 +21,14 @@ def reference_graph(productions: dict[str, Production]) -> dict[str, list[str]]:
     graph: dict[str, list[str]] = {}
     for name, production in productions.items():
         seen: list[str] = []
-        for called in references(production.rule):
+        for called in referenced_production_names(production.rule):
             if called in productions and called not in seen:
                 seen.append(called)
         graph[name] = seen
     return graph
 
 
-def reachable_from(start: str, graph: dict[str, list[str]]) -> set[str]:
+def productions_reachable_from(start: str, graph: dict[str, list[str]]) -> set[str]:
     """Every production reachable from a starting one, the start included."""
     found: set[str] = set()
     stack = [start]
@@ -41,7 +41,7 @@ def reachable_from(start: str, graph: dict[str, list[str]]) -> set[str]:
     return found
 
 
-def cycles(graph: dict[str, list[str]]) -> list[list[str]]:
+def mutually_recursive_groups(graph: dict[str, list[str]]) -> list[list[str]]:
     """The strongly connected components holding more than one node, plus the
     self-referencing ones.
 
@@ -99,14 +99,14 @@ def cycles(graph: dict[str, list[str]]) -> list[list[str]]:
 
 def recursive_names(graph: dict[str, list[str]]) -> set[str]:
     """Every production taking part in a cycle."""
-    return {name for component in cycles(graph) for name in component}
+    return {name for component in mutually_recursive_groups(graph) for name in component}
 
 
-def topological_order(graph: dict[str, list[str]]) -> list[str]:
+def callees_before_callers(graph: dict[str, list[str]]) -> list[str]:
     """Callees before callers, for a graph with no cycles.
 
     Nodes inside a cycle come last, in no meaningful order; a backend that cares
-    checks `cycles` first.
+    checks `mutually_recursive_groups` first.
     """
     ordered: list[str] = []
     state: dict[str, int] = {}  # 1 while visiting, 2 when done

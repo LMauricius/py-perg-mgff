@@ -17,12 +17,17 @@ definition as `R` and `S` and there is no arity to check here.
 from __future__ import annotations
 
 from ...diagnostics.span import Span
-from ..lexing.cst import Group, Item, Line, Text, arguments_of
+from ..lexing.cst import Group, Item, Line, Text, call_arguments_of
 
-__all__ = ["arguments_of", "expand", "substitute", "wrap_in_group"]
+__all__ = [
+    "call_arguments_of",
+    "expand_alternatives",
+    "substitute_parameters",
+    "wrap_items_in_group",
+]
 
 
-def wrap_in_group(items: list[Item], span: Span) -> Item:
+def wrap_items_in_group(items: list[Item], span: Span) -> Item:
     """Make a one-group item holding a sequence, so its grouping survives.
 
     A single item needs no wrapping; anything else becomes `( … )` and is read
@@ -35,48 +40,50 @@ def wrap_in_group(items: list[Item], span: Span) -> Item:
     )
 
 
-def expand(
+def expand_alternatives(
     options: list[list[Item]], bindings: dict[str, list[Item]]
 ) -> list[list[Item]]:
     """Expand a definition's alternatives, with the call's arguments substituted.
 
     Returns one item sequence per alternative.
     """
-    return [substitute(option, bindings) for option in options]
+    return [substitute_parameters(option, bindings) for option in options]
 
 
-def substitute(items: list[Item], bindings: dict[str, list[Item]]) -> list[Item]:
+def substitute_parameters(
+    items: list[Item], bindings: dict[str, list[Item]]
+) -> list[Item]:
     """Replace parameter occurrences in an item sequence.
 
     A parameter appearing as bare text becomes its argument; a multi-item
     argument is wrapped in a group. Substitution descends into groups, and the
     bindings of an inner macro shadow nothing, since expansion is capture-free.
     """
-    return [_substitute_item(item, bindings) for item in items]
+    return [_substitute_in_item(item, bindings) for item in items]
 
 
-def _substitute_item(item: Item, bindings: dict[str, list[Item]]) -> Item:
+def _substitute_in_item(item: Item, bindings: dict[str, list[Item]]) -> Item:
     """Substitute inside one item, rebuilding it only where something changed."""
     # A bare parameter name is replaced whole; anything else keeps its shape and
     # is rewritten part by part.
     if item.is_bare_text and item.text in bindings:
-        return wrap_in_group(bindings[item.text], item.span)
+        return wrap_items_in_group(bindings[item.text], item.span)
 
     parts: list[Text | Group] = []
     for part in item.parts:
         if isinstance(part, Text):
             parts.append(part)
         else:
-            parts.append(_substitute_group(part, bindings))
+            parts.append(_substitute_in_group(part, bindings))
     return Item(span=item.span, parts=parts)
 
 
-def _substitute_group(group: Group, bindings: dict[str, list[Item]]) -> Group:
+def _substitute_in_group(group: Group, bindings: dict[str, list[Item]]) -> Group:
     """Substitute inside every line of a group."""
     return Group(
         span=group.span,
         lines=[
-            Line(span=line.span, items=substitute(line.items, bindings))
+            Line(span=line.span, items=substitute_parameters(line.items, bindings))
             for line in group.lines
         ],
     )

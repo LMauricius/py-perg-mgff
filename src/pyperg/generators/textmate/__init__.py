@@ -32,7 +32,7 @@ from ...diagnostics.errors import GeneratorError
 from ...mgff.semantics.model import GrammarModel
 from ..base import Generator
 from ..utils.naming import pascal_case, safe_file_name, safe_identifier, words_of
-from ..utils.settings import setting, values
+from ..utils.settings import setting_value, setting_values
 from .repository import RepositoryBuilder
 
 #: Where the grammar sits inside the generated extension.
@@ -54,7 +54,9 @@ GRAMMAR_SCHEMA = (
 
 def _write_json(path: Path, data: dict) -> None:
     """Write one object, indented the way VS Code's own files are."""
-    path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    path.write_text(
+        json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
 
 
 def _semantic_version(value: str) -> str:
@@ -106,7 +108,7 @@ class TextMateGenerator(Generator):
         From the file's own `> name(…)`, and from the grammar file's name
         otherwise, exactly as the Kate backend decides it.
         """
-        return setting(model.attributes, "name", None) or safe_identifier(
+        return setting_value(model.attributes, "name", None) or safe_identifier(
             pascal_case(Path(model.name).stem), fallback="Grammar"
         )
 
@@ -126,7 +128,7 @@ class TextMateGenerator(Generator):
         identifier is compared verbatim. The name is split into words at case
         changes too, so `MyToy` gives `my-toy` rather than `mytoy`.
         """
-        given = setting(model.attributes, "id", None)
+        given = setting_value(model.attributes, "id", None)
         if given:
             return given
         words = words_of(self.language_name(model))
@@ -138,7 +140,10 @@ class TextMateGenerator(Generator):
         `source.<id>` by convention for a programming language; a grammar
         describing markup writes `> scope(text.<id>)` at its top instead.
         """
-        return setting(model.attributes, "scope", None) or f"source.{self.language_id(model)}"
+        return (
+            setting_value(model.attributes, "scope", None)
+            or f"source.{self.language_id(model)}"
+        )
 
     def extensions(self, model: GrammarModel) -> list[str]:
         """The file extensions the language claims, as VS Code spells them.
@@ -146,7 +151,9 @@ class TextMateGenerator(Generator):
         `extensions(*.toy *.t)` reaches Kate as a glob and VS Code as `.toy`,
         `.t`, so the leading star is dropped and a bare name gains a dot.
         """
-        declared = values(model.attributes, "extensions") or [f".{self.language_id(model)}"]
+        declared = setting_values(model.attributes, "extensions") or [
+            f".{self.language_id(model)}"
+        ]
         return [f".{_file_type(extension)}" for extension in declared]
 
     # -- the grammar -------------------------------------------------------
@@ -196,10 +203,10 @@ class TextMateGenerator(Generator):
         configuration: dict = {}
 
         comments: dict = {}
-        line = setting(model.attributes, "lineComment", None)
+        line = setting_value(model.attributes, "lineComment", None)
         if line:
             comments["lineComment"] = line
-        block = values(model.attributes, "blockComment")
+        block = setting_values(model.attributes, "blockComment")
         if block:
             if len(block) != 2:
                 raise GeneratorError(
@@ -212,7 +219,9 @@ class TextMateGenerator(Generator):
 
         pairs = builder.bracket_pairs()
         if pairs:
-            configuration["brackets"] = [[opening, closing] for opening, closing in pairs]
+            configuration["brackets"] = [
+                [opening, closing] for opening, closing in pairs
+            ]
             configuration["autoClosingPairs"] = [
                 {"open": opening, "close": closing} for opening, closing in pairs
             ]
@@ -232,17 +241,19 @@ class TextMateGenerator(Generator):
             "extensions": self.extensions(model),
             "configuration": f"./{CONFIGURATION_FILE}",
         }
-        mimetypes = values(model.attributes, "mimetype")
+        mimetypes = setting_values(model.attributes, "mimetype")
         if mimetypes:
             language["mimetypes"] = mimetypes
 
         manifest: dict = {
             "name": identifier,
             "displayName": name,
-            "description": setting(
+            "description": setting_value(
                 model.attributes, "description", f"{name} language support."
             ),
-            "version": _semantic_version(setting(model.attributes, "version", None) or "0.0.1"),
+            "version": _semantic_version(
+                setting_value(model.attributes, "version", None) or "0.0.1"
+            ),
             "engines": {"vscode": VSCODE_ENGINE},
             "categories": ["Programming Languages"],
             "contributes": {
@@ -251,13 +262,16 @@ class TextMateGenerator(Generator):
                     {
                         "language": identifier,
                         "scopeName": self.scope_name(model),
-                        "path": f"./{SYNTAXES_DIR}/{self.grammar_stem(model)}.tmLanguage.json",
+                        "path": (
+                            f"./{SYNTAXES_DIR}/"
+                            f"{self.grammar_stem(model)}.tmLanguage.json"
+                        ),
                     }
                 ],
             },
         }
         for key in ("publisher", "license"):
-            value = setting(model.attributes, key, None)
+            value = setting_value(model.attributes, key, None)
             if value:
                 manifest[key] = value
         return manifest

@@ -59,7 +59,7 @@ class Element:
         self.children.append(element)
         return element
 
-    def leaf(self, tag: str, text: str, **attributes: str | None) -> "Element":
+    def text_child(self, tag: str, text: str, **attributes: str | None) -> "Element":
         """Append a child holding text and return this element, for chaining."""
         element = self.child(tag, **attributes)
         element.text = text
@@ -71,15 +71,15 @@ class Element:
             f' {key}="{escape_attribute(value)}"' for key, value in self.attributes.items()
         )
         if self.text is not None:
-            out.line(f"<{self.tag}{rendered}>{escape_text(self.text)}</{self.tag}>")
+            out.write_line(f"<{self.tag}{rendered}>{escape_text(self.text)}</{self.tag}>")
         elif not self.children:
-            out.line(f"<{self.tag}{rendered}/>")
+            out.write_line(f"<{self.tag}{rendered}/>")
         else:
-            out.line(f"<{self.tag}{rendered}>")
-            with out.nested():
+            out.write_line(f"<{self.tag}{rendered}>")
+            with out.indented():
                 for child in self.children:
                     child.write(out)
-            out.line(f"</{self.tag}>")
+            out.write_line(f"</{self.tag}>")
 
     def render(self, indent: str = "  ") -> str:
         """The element as text, with no XML declaration in front."""

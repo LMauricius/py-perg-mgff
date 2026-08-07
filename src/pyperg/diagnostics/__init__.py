@@ -6,9 +6,9 @@ from .errors import (
     PyPergError,
     SemanticError,
     SourceError,
-    SyntaxError_,
+    GrammarSyntaxError,
 )
-from .reporter import format_error, report
+from .reporter import format_error, print_error
 from .source import SourceFile
 from .span import Position, Span
 
@@ -21,7 +21,7 @@ __all__ = [
     "SourceError",
     "SourceFile",
     "Span",
-    "SyntaxError_",
+    "GrammarSyntaxError",
     "format_error",
-    "report",
+    "print_error",
 ]

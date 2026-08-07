@@ -19,7 +19,7 @@ import re
 
 from ..grammar.macros import MacroDefinition
 from ..grammar.shapes import MacroShape
-from ..grammar.signatures import shape
+from ..grammar.signatures import make_shape
 from ..lexing.cst import Item
 from ..semantics.context import CallContext
 from .rules import MacroCall, Rule
@@ -51,28 +51,30 @@ CHARACTER_PATTERN = rf"(?:{_PART}|\|)"
 # -- what each call carries -------------------------------------------------
 
 
-def _character_args(item: Item, match: re.Match[str]) -> dict[str, object]:
+def _character_set_call_arguments(item: Item, match: re.Match[str]) -> dict[str, object]:
     """What a character set carries: the item, and the text that spells it."""
     return {"item": item, "text": item.text}
 
 
 # -- the shapes -------------------------------------------------------------
 
-CHARACTER_SET_SHAPE: MacroShape = shape(
-    "character-set", CHARACTER_SET_PATTERN, _character_args
+CHARACTER_SET_SHAPE: MacroShape = make_shape(
+    "character-set", CHARACTER_SET_PATTERN, _character_set_call_arguments
 )
-CHARACTER_SHAPE: MacroShape = shape("character", CHARACTER_PATTERN, _character_args)
+CHARACTER_SHAPE: MacroShape = make_shape(
+    "character", CHARACTER_PATTERN, _character_set_call_arguments
+)
 
 
 # -- what they produce ------------------------------------------------------
 
 
-def _character_macro(macro_shape: MacroShape) -> MacroDefinition:
+def _make_character_set_macro(macro_shape: MacroShape) -> MacroDefinition:
     """One of the two character-set macros, naming itself in what it builds.
 
     The two share a body, but each still builds a call naming *itself* rather
     than one standing in for the other, so a node never misreports which macro
-    made it. `character_set_of` accepts either.
+    made it. `character_set_matched_by` accepts either.
     """
     definition: MacroDefinition
 
@@ -88,14 +90,14 @@ def _character_macro(macro_shape: MacroShape) -> MacroDefinition:
     return definition
 
 
-CHARACTER_SET = _character_macro(CHARACTER_SET_SHAPE)
-CHARACTER = _character_macro(CHARACTER_SHAPE)
+CHARACTER_SET = _make_character_set_macro(CHARACTER_SET_SHAPE)
+CHARACTER = _make_character_set_macro(CHARACTER_SHAPE)
 
 #: The macros whose calls match one character from a set.
 CHARACTER_MACROS = frozenset({CHARACTER_SET, CHARACTER})
 
 
-def character_set_of(node: Rule) -> CharacterSet | None:
+def character_set_matched_by(node: Rule) -> CharacterSet | None:
     """The set a node matches one character from, or None for any other node."""
     if isinstance(node, MacroCall) and node.macro in CHARACTER_MACROS:
         return parse_character_set(node.item.text)

@@ -16,21 +16,22 @@ Two things a regular expression cannot express are reported rather than faked:
   approximation otherwise.
 
 A `MacroCall` of any macro but a character set belongs to whoever defined that
-macro, so `regex_of` takes an optional `emit` for those and returns None without
+macro, so `regex_of` takes an optional `emit_macro_call` for those and returns None without
 one.
 
 A backend that solves its own recursion — the regex backend does, by Arden's
 rule — hands the patterns it has already worked out to `regex_of` as `patterns`,
-and builds the rest with `concatenation`, `alternation` and `atom`, which bracket
-what they join exactly as `regex_of` does.
+and builds the rest with `joined_in_sequence`, `joined_as_alternatives` and
+`parenthesized_if_needed`, which bracket what they join exactly as `regex_of`
+does.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 
-from ...mgff.common.characters import character_set_of
-from ...mgff.common.charset import CharacterPart, CharacterSet
+from ...mgff.common.characters import character_set_matched_by
+from ...mgff.common.charset import CharacterSetPart, CharacterSet
 from ...mgff.common.rules import Choice, MacroCall, Rule, Repetition, Sequence
 from ...mgff.semantics.model import Production
 
@@ -40,11 +41,11 @@ METACHARACTERS = set(r".^$*+?()[]{}|\\")
 #: Characters that need a backslash inside a character class.
 CLASS_METACHARACTERS = set(r"^]\-")
 
-Lookup = Callable[[str], Production | None]
+FindProductionByName = Callable[[str], Production | None]
 
 #: Emits a macro call the backend registered itself, given the call and a way to
 #: turn its arguments into patterns. None means "no regular form".
-Emit = Callable[[MacroCall, Callable[[Rule], str | None]], str | None]
+EmitMacroCall = Callable[[MacroCall, Callable[[Rule], str | None]], str | None]
 
 
 # -- characters ------------------------------------------------------------
@@ -54,17 +55,17 @@ def escape_character(char: str) -> str:
     """Escape one character for use outside a character class."""
     if char in METACHARACTERS:
         return "\\" + char
-    return _control_escape(char) or char
+    return _readable_control_escape(char) or char
 
 
 def escape_in_class(char: str) -> str:
     """Escape one character for use inside `[ … ]`."""
     if char in CLASS_METACHARACTERS:
         return "\\" + char
-    return _control_escape(char) or char
+    return _readable_control_escape(char) or char
 
 
-def _control_escape(char: str) -> str | None:
+def _readable_control_escape(char: str) -> str | None:
     """The readable spelling of a character better not written raw, or None.
 
     A control character is one such, and so are `U+FFFE` and `U+FFFF`: they are
@@ -82,7 +83,7 @@ def _control_escape(char: str) -> str | None:
     return None
 
 
-def part_pattern(part: CharacterPart) -> str:
+def character_set_part_pattern(part: CharacterSetPart) -> str:
     """One part of a character set, as it appears inside `[ … ]`."""
     if part.kind == "character":
         return escape_in_class(part.value)
@@ -104,7 +105,7 @@ def character_class(characters: CharacterSet) -> str:
             return escape_character(only.value)
         if only.kind == "category":
             return f"\\p{{{only.value}}}"
-    return "[" + "".join(part_pattern(part) for part in parts) + "]"
+    return "[" + "".join(character_set_part_pattern(part) for part in parts) + "]"
 
 
 # -- rule trees ------------------------------------------------------------
@@ -112,37 +113,39 @@ def character_class(characters: CharacterSet) -> str:
 
 def regex_of(
     node: Rule,
-    lookup: Lookup,
-    emit: Emit | None = None,
+    find_production: FindProductionByName,
+    emit_macro_call: EmitMacroCall | None = None,
     patterns: Mapping[str, str] | None = None,
 ) -> str | None:
     """A rule tree as a regular expression, or None when it has no regular form.
 
     A reference is answered by `patterns` when it names one, and inlined through
-    `lookup` otherwise; a reference that leads back to itself, or to a name
-    neither knows, gives None. `emit` handles the macro calls this module knows
+    `find_production` otherwise; a reference that leads back to itself, or to a name
+    neither knows, gives None. `emit_macro_call` handles the macro calls this module knows
     nothing of.
     """
-    return _regex(node, lookup, emit, patterns or {}, seen=frozenset())
+    return _regex(
+        node, find_production, emit_macro_call, patterns or {}, seen=frozenset()
+    )
 
 
 def _regex(
     node: Rule,
-    lookup: Lookup,
-    emit: Emit | None,
+    find_production: FindProductionByName,
+    emit_macro_call: EmitMacroCall | None,
     patterns: Mapping[str, str],
     seen: frozenset[str],
 ) -> str | None:
     def inner(sub: Rule) -> str | None:
-        return _regex(sub, lookup, emit, patterns, seen)
+        return _regex(sub, find_production, emit_macro_call, patterns, seen)
 
     if isinstance(node, MacroCall):
-        characters = character_set_of(node)
+        characters = character_set_matched_by(node)
         if characters is not None:
             return character_class(characters)
-        if emit is None:
+        if emit_macro_call is None:
             return None
-        return emit(node, inner)
+        return emit_macro_call(node, inner)
 
     if isinstance(node, Sequence):
         pieces: list[str] = []
@@ -151,13 +154,15 @@ def _regex(
             if piece is None:
                 return None
             pieces.append(piece)
-        return concatenation(pieces)
+        return joined_in_sequence(pieces)
 
     if isinstance(node, Repetition):
         body = inner(node.body)
         if body is None:
             return None
-        return atom(body) + _quantifier(node.minimum, node.maximum)
+        return parenthesized_if_needed(body) + _repetition_suffix(
+            node.minimum, node.maximum
+        )
 
     if isinstance(node, Choice):
         options: list[str] = []
@@ -166,7 +171,7 @@ def _regex(
             if pattern is None:
                 return None
             options.append(pattern)
-        return alternation(options, node.symbol)
+        return joined_as_alternatives(options, node.symbol)
 
     # A reference: the pattern already worked out for it, or the production it
     # names, inlined once.
@@ -174,21 +179,23 @@ def _regex(
         return patterns[node.name]
     if node.name in seen:
         return None
-    production = lookup(node.name)
+    production = find_production(node.name)
     if production is None:
         return None
-    return _regex(production.rule, lookup, emit, patterns, seen | {node.name})
+    return _regex(
+        production.rule, find_production, emit_macro_call, patterns, seen | {node.name}
+    )
 
 
 # -- putting patterns together ---------------------------------------------
 
 
-def concatenation(pieces: list[str]) -> str:
+def joined_in_sequence(pieces: list[str]) -> str:
     """Patterns matched one after another, each bracketed where it must be."""
-    return "".join(_grouped_for_sequence(piece) for piece in pieces)
+    return "".join(_parenthesized_if_alternation(piece) for piece in pieces)
 
 
-def alternation(options: list[str], symbol: str = "/") -> str:
+def joined_as_alternatives(options: list[str], symbol: str = "/") -> str:
     """Options as one alternation, ordered by the choice's preference mode.
 
     `/` keeps the written order. `|` wants the longest match, which alternation
@@ -197,11 +204,15 @@ def alternation(options: list[str], symbol: str = "/") -> str:
     """
     if len(options) == 1:
         return options[0]
-    ordered = options if symbol == "/" else sorted(options, key=_fixed_length, reverse=True)
+    ordered = (
+        options
+        if symbol == "/"
+        else sorted(options, key=_fixed_match_length, reverse=True)
+    )
     return "(?:" + "|".join(ordered) + ")"
 
 
-def _quantifier(minimum: int, maximum: int | None) -> str:
+def _repetition_suffix(minimum: int, maximum: int | None) -> str:
     """The suffix repeating an atom between `minimum` and `maximum` times."""
     if (minimum, maximum) == (0, 1):
         return "?"
@@ -216,7 +227,7 @@ def _quantifier(minimum: int, maximum: int | None) -> str:
     return f"{{{minimum},{maximum}}}"
 
 
-def _class_end(pattern: str, start: int) -> int:
+def _character_class_end(pattern: str, start: int) -> int:
     """Where the character class opening at `start` closes, or -1 if it does not.
 
     A `]` is the closing bracket everywhere except in two places: straight after
@@ -239,7 +250,7 @@ def _class_end(pattern: str, start: int) -> int:
     return -1
 
 
-def _fixed_length(pattern: str) -> int:
+def _fixed_match_length(pattern: str) -> int:
     """How many characters a pattern matches when that number is fixed, else -1.
 
     A plain character, an escape and a character class each match exactly one;
@@ -272,7 +283,7 @@ def _fixed_length(pattern: str) -> int:
                 index += 2
             length += 1
         elif char == "[":
-            closing = _class_end(pattern, index)
+            closing = _character_class_end(pattern, index)
             if closing == -1:
                 return -1
             index = closing + 1
@@ -287,7 +298,7 @@ def _fixed_length(pattern: str) -> int:
     return length
 
 
-def atom(pattern: str) -> str:
+def parenthesized_if_needed(pattern: str) -> str:
     """A pattern wrapped so a quantifier applies to the whole of it.
 
     The empty pattern is what an empty group gives, and a quantifier needs
@@ -296,19 +307,23 @@ def atom(pattern: str) -> str:
     """
     if not pattern:
         return "(?:)"
-    return pattern if _is_atomic(pattern) else f"(?:{pattern})"
+    return pattern if _can_take_quantifier_directly(pattern) else f"(?:{pattern})"
 
 
-def _grouped_for_sequence(pattern: str) -> str:
+def _parenthesized_if_alternation(pattern: str) -> str:
     """A pattern wrapped only where concatenation would change its meaning.
 
-    `alternation` already brackets what it builds, so this is about nothing
+    `joined_as_alternatives` already brackets what it builds, so this is about nothing
     else; the check stays for patterns a caller assembled itself.
     """
-    return f"(?:{pattern})" if "|" in pattern and not _is_atomic(pattern) else pattern
+    return (
+        f"(?:{pattern})"
+        if "|" in pattern and not _can_take_quantifier_directly(pattern)
+        else pattern
+    )
 
 
-def _is_atomic(pattern: str) -> bool:
+def _can_take_quantifier_directly(pattern: str) -> bool:
     """Whether a quantifier may follow the pattern without brackets."""
     if not pattern:
         return False
@@ -316,7 +331,11 @@ def _is_atomic(pattern: str) -> bool:
         return True
     if len(pattern) == 2 and pattern[0] == "\\":
         return True
-    if pattern.startswith("\\p{") and pattern.endswith("}") and "}" not in pattern[3:-1]:
+    if (
+        pattern.startswith("\\p{")
+        and pattern.endswith("}")
+        and "}" not in pattern[3:-1]
+    ):
         return True
     # A single bracketed group: balanced, and closing only at the very end.
     if pattern[0] in "([" and pattern[-1] in ")]":

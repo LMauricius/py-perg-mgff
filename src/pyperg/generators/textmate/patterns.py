@@ -14,7 +14,7 @@ Two things the expression must say that the rule tree does not:
   between word boundaries; TextMate has no such rule, so a production whose
   alternatives are all plain words is wrapped in `\\b…\\b`. Without it `if`
   would match inside `iffy`.
-- **Longest match.** `utils.regex.alternation` already orders a `|` choice
+- **Longest match.** `utils.regex.joined_as_alternatives` already orders a `|` choice
   longest fixed option first, which is what makes `<=` win over `<`.
 
 A production that reaches itself has no regular form. TextMate can still express
@@ -26,8 +26,14 @@ from __future__ import annotations
 
 from ...diagnostics.errors import GeneratorError
 from ...mgff.semantics.model import Production
-from ..utils.regex import Lookup, alternation, concatenation, escape_character, regex_of
-from ..utils.walk import literal_of, nullable
+from ..utils.regex import (
+    FindProductionByName,
+    escape_character,
+    joined_as_alternatives,
+    joined_in_sequence,
+    regex_of,
+)
+from ..utils.walk import literal_of, can_match_empty
 from ..utils.words import is_word
 
 #: A pattern object as it appears in the generated JSON.
@@ -62,11 +68,11 @@ def keyword_pattern(words: list[str], symbol: str) -> str:
     The boundaries also repair an order-based choice: `\\b(?:if|iffy)\\b` still
     matches `iffy` whole, because `if` cannot end in the middle of a word.
     """
-    options = [concatenation([escape_character(char) for char in word]) for word in words]
-    return r"\b" + alternation(options, symbol) + r"\b"
+    options = [joined_in_sequence([escape_character(char) for char in word]) for word in words]
+    return r"\b" + joined_as_alternatives(options, symbol) + r"\b"
 
 
-def regex_for(production: Production, lookup: Lookup) -> str:
+def regex_for_production(production: Production, find_production: FindProductionByName) -> str:
     """A whole production as one expression.
 
     Raises `GeneratorError` when it has no regular form, which for a `match`
@@ -79,7 +85,7 @@ def regex_for(production: Production, lookup: Lookup) -> str:
     if words is not None:
         return keyword_pattern(words, production.choice_symbol or "/")
 
-    pattern = regex_of(production.rule, lookup)
+    pattern = regex_of(production.rule, find_production)
     if pattern is None:
         raise GeneratorError(
             f"the token {production.name!r} reaches itself, so no single pattern "
@@ -89,7 +95,9 @@ def regex_for(production: Production, lookup: Lookup) -> str:
     return pattern
 
 
-def match_pattern(production: Production, scope: str | None, lookup: Lookup) -> Pattern:
+def match_pattern(
+    production: Production, scope: str | None, find_production: FindProductionByName
+) -> Pattern:
     """A production as one `match` pattern, scoped by its styles.
 
     An unscoped pattern is still emitted: it consumes the text it matched, which
@@ -98,15 +106,15 @@ def match_pattern(production: Production, scope: str | None, lookup: Lookup) -> 
     pattern: Pattern = {}
     if scope is not None:
         pattern["name"] = scope
-    pattern["match"] = regex_for(production, lookup)
+    pattern["match"] = regex_for_production(production, find_production)
     return pattern
 
 
-def matches_nothing(production: Production, lookup: Lookup) -> bool:
+def matches_nothing(production: Production, find_production: FindProductionByName) -> bool:
     """Whether the production's expression could match the empty string.
 
     A zero-width `match` makes no progress. VS Code's tokeniser survives one, but
     the rule can never highlight anything, so the caller says so rather than
     emitting a pattern that silently does nothing.
     """
-    return nullable(production.rule, lookup)
+    return can_match_empty(production.rule, find_production)

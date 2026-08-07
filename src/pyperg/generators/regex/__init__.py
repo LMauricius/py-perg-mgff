@@ -30,8 +30,8 @@ from ...mgff.common.rules import Rule
 from ...mgff.semantics.model import GrammarModel, Production
 from ..base import Generator
 from ..utils.regex import regex_of
-from ..utils.streams import pushes_of, store_of
-from .linear import patterns_for
+from ..utils.streams import pushed_list_names_of, stored_field_of
+from .linear import patterns_for_all_productions
 
 #: The macro a grammar is read from.
 START = "Match"
@@ -40,7 +40,7 @@ START = "Match"
 GROUP_NAME = re.compile(r"\(\?P<([^>]*)>")
 
 
-def _duplicate_names(pattern: str) -> list[str]:
+def _duplicate_capture_names(pattern: str) -> list[str]:
     """The capture names appearing more than once, in the order they first do."""
     seen: set[str] = set()
     repeated: list[str] = []
@@ -58,7 +58,7 @@ class RegexGenerator(Generator):
     description = "write one regular expression, starting from the `Match` macro"
 
     def __init__(self) -> None:
-        #: The table `productions_of` settled, for `capture` to look a name up in.
+        #: The table `productions_to_read` settled, for `wrapped_in_capture_group` to look a name up in.
         self.productions: dict[str, Production] = {}
 
     def generate(self, model: GrammarModel, out_dir: Path) -> list[Path]:
@@ -71,12 +71,14 @@ class RegexGenerator(Generator):
 
     def render(self, model: GrammarModel) -> str:
         """The whole grammar as one pattern, without touching the file system."""
-        productions = self.productions_of(model)
-        pattern = patterns_for(productions, START, self.render_rule, self.capture)[START]
+        productions = self.productions_to_read(model)
+        pattern = patterns_for_all_productions(
+            productions, START, self.render_rule, self.wrapped_in_capture_group
+        )[START]
 
         # A capture group inside a production reached twice is written twice, and
         # a name may only be used once in a pattern.
-        duplicates = _duplicate_names(pattern)
+        duplicates = _duplicate_capture_names(pattern)
         if duplicates:
             listed = ", ".join(repr(name) for name in duplicates)
             raise GeneratorError(
@@ -87,7 +89,7 @@ class RegexGenerator(Generator):
             )
         return pattern
 
-    def productions_of(self, model: GrammarModel) -> dict[str, Production]:
+    def productions_to_read(self, model: GrammarModel) -> dict[str, Production]:
         """The productions to read, checking that the grammar has the shape for it."""
         if model.targets:
             listed = ", ".join(repr(target.name) for target in model.targets)
@@ -97,7 +99,7 @@ class RegexGenerator(Generator):
                 "at file scope instead"
             )
         productions = model.globals.productions
-        # Kept for `capture`, which is asked about a production by name alone.
+        # Kept for `wrapped_in_capture_group`, which is asked about a production by name alone.
         self.productions = productions
         if START not in productions:
             raise GeneratorError(
@@ -108,24 +110,26 @@ class RegexGenerator(Generator):
 
     # -- one rule ----------------------------------------------------------
 
-    def capture(self, name: str, pattern: str) -> str:
+    def wrapped_in_capture_group(self, name: str, pattern: str) -> str:
         """A stored production as the named group every call of it becomes.
 
         `push` has no counterpart here: one expression matches once and produces
         one result, so there is no list for a match to be appended to.
         """
         production = self.productions[name]
-        if pushes_of(production):
+        if pushed_list_names_of(production):
             raise GeneratorError(
                 f"`push` on {name!r} has no meaning in one expression, which "
                 "matches once and produces one result; use `store` instead"
             )
-        field = store_of(production)
+        field = stored_field_of(production)
         return pattern if field is None else f"(?P<{field}>{pattern})"
 
     def render_rule(self, node: Rule, patterns: Mapping[str, str]) -> str:
         """One rule as a pattern, with the productions it calls already solved."""
-        pattern = regex_of(node, lookup=_nothing, emit=None, patterns=patterns)
+        pattern = regex_of(
+            node, find_production=_no_inlining, emit_macro_call=None, patterns=patterns
+        )
         if pattern is None:
             raise GeneratorError(
                 "this rule has no regular form: it calls something a regular "
@@ -134,6 +138,6 @@ class RegexGenerator(Generator):
         return pattern
 
 
-def _nothing(name: str) -> Production | None:
+def _no_inlining(name: str) -> Production | None:
     """Every reference is answered by a solved pattern, so none is inlined here."""
     return None

@@ -22,10 +22,10 @@ class LexError(SourceError):
     """Part 1: the file does not split into lines, items and groups."""
 
 
-class SyntaxError_(SourceError):
+class GrammarSyntaxError(SourceError):
     """Part 2: the pieces are well-formed but their arrangement has no role.
 
-    Named with a trailing underscore to leave the built-in `SyntaxError` alone.
+    Named with a `Grammar` prefix to leave the built-in `SyntaxError` alone.
     """
 
 

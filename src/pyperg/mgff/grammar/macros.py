@@ -15,7 +15,7 @@ list, a name — lives in the callable itself, which is normally a closure a
 factory built. That is why a definition needs no subclasses, and why the two
 fields below are the whole of it.
 
-**Scoped** is not a definition but a place in the order: it says "consult the
+**ScopeLookupPoint** is not a definition but a place in the order: it says "consult the
 grammar's own definitions here". Precedence belongs to the ordered list of
 macros rather than to the scope chain — a character set of several parts
 outranks a definition however deeply nested it is — so the list names the two
@@ -52,7 +52,7 @@ class MacroDefinition:
 
 
 @dataclass(frozen=True, slots=True)
-class Scoped:
+class ScopeLookupPoint:
     """A place in the order where the grammar's own definitions are consulted.
 
     `shape` is only a filter on the item — a name carrying arguments, or one
@@ -63,4 +63,4 @@ class Scoped:
 
 
 #: One entry of the ordered list a call is resolved against.
-Macro = MacroDefinition | Scoped
+Macro = MacroDefinition | ScopeLookupPoint

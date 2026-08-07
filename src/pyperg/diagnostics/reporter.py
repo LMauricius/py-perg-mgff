@@ -14,13 +14,17 @@ def format_error(error: PyPergError, source: SourceFile | None = None) -> str:
     if not isinstance(error, SourceError) or error.span is None:
         return f"error: {error}"
 
-    where = source.name if source is not None else "<input>"
-    head = f"{where}:{error.span.start}: error: {error.message}"
+    file_label = source.name if source is not None else "<input>"
+    first_line = f"{file_label}:{error.span.start}: error: {error.message}"
     if source is None:
-        return head
-    return f"{head}\n{source.excerpt(error.span)}"
+        return first_line
+    return f"{first_line}\n{source.excerpt_with_caret(error.span)}"
 
 
-def report(error: PyPergError, source: SourceFile | None = None, stream: TextIO | None = None) -> None:
+def print_error(
+    error: PyPergError,
+    source: SourceFile | None = None,
+    stream: TextIO | None = None,
+) -> None:
     """Print an error to stderr (or `stream`)."""
     print(format_error(error, source), file=stream or sys.stderr)

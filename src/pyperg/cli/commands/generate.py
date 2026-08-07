@@ -32,7 +32,7 @@ class GenerateCommand(Command):
 
     def run(self, cli_args: argparse.Namespace) -> int:
         if cli_args.list:
-            for name, backend in sorted(registry.available().items()):
+            for name, backend in sorted(registry.available_generators().items()):
                 print(f"{name:12} {backend.description}")
             return 0
 
@@ -42,16 +42,16 @@ class GenerateCommand(Command):
 
         # 1. Look the backend up first: the constructs it registers are in force
         #    while the grammar is read, so they must be known before resolving.
-        backend = registry.get(cli_args.generator)
+        backend = registry.load_generator(cli_args.generator)
 
         # 2. Lex, parse and resolve the file into a model.
-        source = SourceFile.read(cli_args.file)
+        source = SourceFile.read_from_path(cli_args.file)
         model = resolve(lex(source), name=source.name, macros=backend.macros())
 
         # 3. Run the backend over the model.
-        written = backend.generate(model, Path(cli_args.out_dir))
+        written_paths = backend.generate(model, Path(cli_args.out_dir))
 
         # 4. Print the paths written.
-        for path in written:
+        for path in written_paths:
             print(path)
         return 0

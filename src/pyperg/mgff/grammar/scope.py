@@ -46,7 +46,7 @@ __all__ = [
     "MacroSource",
     "Scope",
     "TargetScope",
-    "make_source",
+    "macro_source_from_head",
     "signature_of",
 ]
 
@@ -118,30 +118,34 @@ class Scope:
 
     # -- construction ------------------------------------------------------
 
-    def reserve(self, source: MacroSource) -> None:
+    def reserve_name_for(self, source: MacroSource) -> None:
         """Claim a name for a macro being read, before its definition is built.
 
         The alternatives of a `d` line arrive one line at a time, so a name is
         taken as soon as it is written and filled in once the macro is complete.
         """
-        self._claim(source.signature, source.span, "macro")
+        self._reject_duplicate_name(source.signature, source.span, "macro")
         self.sources[source.signature] = source
 
-    def define(self, source: MacroSource, definition: MacroDefinition) -> None:
+    def file_definition(self, source: MacroSource, definition: MacroDefinition) -> None:
         """File the definition built from a source this scope has reserved."""
         self.macros[source.signature] = definition
 
     def add_subscope(self, scope: Scope) -> None:
         """Register a prefix scope nested directly in this one."""
-        self._claim(scope.name, scope.span, "prefix", among=self.subscopes)
+        self._reject_duplicate_name(
+            scope.name, scope.span, "prefix", among=self.subscopes
+        )
         self.subscopes[scope.name] = scope
 
     def add_target(self, target: TargetScope) -> None:
         """Register a target nested directly in this one."""
-        self._claim(target.name, target.span, "target", among=self.targets)
+        self._reject_duplicate_name(
+            target.name, target.span, "target", among=self.targets
+        )
         self.targets[target.name] = target
 
-    def absorb(self, child: Scope) -> None:
+    def merge_definitions_from(self, child: Scope) -> None:
         """Re-register a prefix scope's names here, each behind its prefix.
 
         Runs after the child is fully parsed, so the child has already absorbed
@@ -149,15 +153,17 @@ class Scope:
         """
         prefix = child.name
         for signature, source in child.sources.items():
-            self._claim(prefix + signature, source.span, "macro")
+            self._reject_duplicate_name(prefix + signature, source.span, "macro")
             self.sources[prefix + signature] = source
             if signature in child.macros:
                 self.macros[prefix + signature] = child.macros[signature]
         for name, scope in child.subscopes.items():
-            self._claim(prefix + name, scope.span, "prefix", among=self.subscopes)
+            self._reject_duplicate_name(
+                prefix + name, scope.span, "prefix", among=self.subscopes
+            )
             self.subscopes[prefix + name] = scope
 
-    def _claim(
+    def _reject_duplicate_name(
         self,
         key: str,
         span: Span,
@@ -173,7 +179,7 @@ class Scope:
 
     # -- lookup ------------------------------------------------------------
 
-    def lookup(self, signature: str) -> MacroDefinition | None:
+    def find_definition(self, signature: str) -> MacroDefinition | None:
         """Find a definition by signature, this scope first, then the enclosing ones.
 
         A target is an ordinary link in the chain going outwards: a macro defined
@@ -186,7 +192,7 @@ class Scope:
             scope = scope.parent
         return None
 
-    def lookup_source(self, signature: str) -> MacroSource | None:
+    def find_source(self, signature: str) -> MacroSource | None:
         """Find the line a definition was read from, the same way."""
         scope: Scope | None = self
         while scope is not None:
@@ -215,7 +221,7 @@ class TargetScope(Scope):
     """
 
 
-def make_source(head: Item, scope: Scope) -> MacroSource:
+def macro_source_from_head(head: Item, scope: Scope) -> MacroSource:
     """Build an empty source from its head item, reading its parameter names.
 
     The text outside the head's groups is the name; each group declares one
@@ -227,11 +233,11 @@ def make_source(head: Item, scope: Scope) -> MacroSource:
         name=head.text,
         signature=signature_of(head),
         scope=scope,
-        parameters=[_parameter_name(group) for group in head.groups],
+        parameters=[_parameter_name_in_slot(group) for group in head.groups],
     )
 
 
-def _parameter_name(group: Group) -> str:
+def _parameter_name_in_slot(group: Group) -> str:
     """The name declared by one slot of a head: the single item inside it."""
     items = [item for line in group.lines for item in line.items]
     if len(items) != 1 or not items[0].is_bare_text:

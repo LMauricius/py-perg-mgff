@@ -30,7 +30,7 @@ WS = " \t"
 #: every walk over the tree it builds, so the limit keeps a file no one wrote by
 #: hand from exhausting the interpreter's stack. Nothing written to be read comes
 #: near it.
-MAX_GROUP_DEPTH = 64
+MAX_GROUP_NESTING = 64
 
 
 def lex(source: SourceFile) -> File:
@@ -52,37 +52,40 @@ class _Lexer:
     def __init__(self, source: SourceFile) -> None:
         self.source = source
         self.text = source.text
-        self.pos = 0
+        self.cursor = 0
         #: How many groups are open at the cursor.
-        self.depth = 0
+        self.open_group_count = 0
 
     # -- cursor helpers ----------------------------------------------------
 
     def _at_end(self) -> bool:
-        return self.pos >= len(self.text)
+        return self.cursor >= len(self.text)
 
-    def _peek(self) -> str:
+    def _character_at_cursor(self) -> str:
         """The character under the cursor, or "" at end of input."""
-        return self.text[self.pos] if self.pos < len(self.text) else ""
+        return self.text[self.cursor] if self.cursor < len(self.text) else ""
 
-    def _span(self, start: int, end: int | None = None) -> Span:
-        end = self.pos if end is None else end
-        return Span(self.source.position(start), self.source.position(end))
+    def _span_from(self, start: int, end: int | None = None) -> Span:
+        end = self.cursor if end is None else end
+        return Span(self.source.position_at_offset(start), self.source.position_at_offset(end))
 
     def _error(self, message: str, start: int, end: int | None = None) -> LexError:
-        return LexError(message, self._span(start, end))
+        return LexError(message, self._span_from(start, end))
 
-    def _skip_ws(self) -> None:
-        while self._peek() in WS and not self._at_end():
-            self.pos += 1
+    def _skip_spaces_and_tabs(self) -> None:
+        while self._character_at_cursor() in WS and not self._at_end():
+            self.cursor += 1
 
     def _skip_newline(self) -> bool:
         """Consume one NL (`\\r?\\n`) if present."""
-        if self._peek() == "\r" and self.text[self.pos + 1 : self.pos + 2] == "\n":
-            self.pos += 2
+        if (
+            self._character_at_cursor() == "\r"
+            and self.text[self.cursor + 1 : self.cursor + 2] == "\n"
+        ):
+            self.cursor += 2
             return True
-        if self._peek() == "\n":
-            self.pos += 1
+        if self._character_at_cursor() == "\n":
+            self.cursor += 1
             return True
         return False
 
@@ -90,10 +93,10 @@ class _Lexer:
 
     def lex_file(self) -> File:
         """`file = lines`, ending at end of input."""
-        lines = self._lines(in_group=False)
+        lines = self._read_lines(in_group=False)
         return File(self.source.name, lines)
 
-    def _lines(self, in_group: bool, open_at: int = 0) -> list[Line]:
+    def _read_lines(self, in_group: bool, open_at: int = 0) -> list[Line]:
         """`lines = line (NL line)*`.
 
         Stops at end of input at the top level, or at the closing `)` of the
@@ -101,12 +104,12 @@ class _Lexer:
         """
         lines: list[Line] = []
         while True:
-            lines.append(self._line())
+            lines.append(self._read_line())
 
-            if self._peek() == ")":
+            if self._character_at_cursor() == ")":
                 if in_group:
                     return lines
-                raise self._error("unmatched )", self.pos, self.pos + 1)
+                raise self._error("unmatched )", self.cursor, self.cursor + 1)
 
             if self._skip_newline():
                 continue
@@ -120,90 +123,92 @@ class _Lexer:
 
             # A line otherwise stops only at ")", NL or end of input, so what is
             # left here is a carriage return outside a `\r\n` pair.
-            if self._peek() == "\r":
+            if self._character_at_cursor() == "\r":
                 raise self._error(
                     "stray carriage return; a line ends with \\n or \\r\\n",
-                    self.pos,
-                    self.pos + 1,
+                    self.cursor,
+                    self.cursor + 1,
                 )
             raise self._error(
-                f"unexpected character {self._peek()!r}", self.pos, self.pos + 1
+                f"unexpected character {self._character_at_cursor()!r}",
+                self.cursor,
+                self.cursor + 1,
             )
 
-    def _line(self) -> Line:
+    def _read_line(self) -> Line:
         """`line = WS* (item (WS+ item)*)? WS*`, stopping before NL or `)`."""
-        start = self.pos
+        start = self.cursor
         items: list[Item] = []
 
-        self._skip_ws()
-        while not self._at_end() and self._peek() not in ")\r\n":
-            items.append(self._item())
+        self._skip_spaces_and_tabs()
+        while not self._at_end() and self._character_at_cursor() not in ")\r\n":
+            items.append(self._read_item())
             # An item ends only at WS, NL, ")" or end of input, so the items of
             # a line are always separated by whitespace without checking here.
-            self._skip_ws()
+            self._skip_spaces_and_tabs()
 
-        return Line(self._span(start), items)
+        return Line(self._span_from(start), items)
 
-    def _item(self) -> Item:
+    def _read_item(self) -> Item:
         """One item: text and groups in alternation, never two groups in a row."""
-        start = self.pos
+        start = self.cursor
         parts: list[Text | Group] = []
         previous_was_group = False
 
         while not self._at_end():
-            char = self._peek()
+            char = self._character_at_cursor()
 
             if char == "(":
                 if previous_was_group:
                     raise self._error(
                         "two groups in one item must be separated by text",
-                        self.pos,
-                        self.pos + 1,
+                        self.cursor,
+                        self.cursor + 1,
                     )
-                parts.append(self._group())
+                parts.append(self._read_group())
                 previous_was_group = True
             elif char in WS or char in ")\r\n":
                 break
             else:
-                parts.append(self._text())
+                parts.append(self._read_text())
                 previous_was_group = False
 
-        return Item(self._span(start), parts)
+        return Item(self._span_from(start), parts)
 
-    def _group(self) -> Group:
+    def _read_group(self) -> Group:
         """`group = "(" lines ")"`. The contents are lines of their own."""
-        start = self.pos
-        if self.depth >= MAX_GROUP_DEPTH:
+        start = self.cursor
+        if self.open_group_count >= MAX_GROUP_NESTING:
             raise self._error(
-                f"groups nested more than {MAX_GROUP_DEPTH} deep", start, start + 1
+                f"groups nested more than {MAX_GROUP_NESTING} deep", start, start + 1
             )
-        self.pos += 1  # the "("
-        self.depth += 1
-        lines = self._lines(in_group=True, open_at=start)
-        self.depth -= 1
-        self.pos += 1  # the ")"; _lines guarantees it is there
-        return Group(self._span(start), lines)
+        self.cursor += 1  # the "("
+        self.open_group_count += 1
+        lines = self._read_lines(in_group=True, open_at=start)
+        self.open_group_count -= 1
+        self.cursor += 1  # the ")"; _read_lines guarantees it is there
+        return Group(self._span_from(start), lines)
 
-    def _text(self) -> Text:
+    def _read_text(self) -> Text:
         """`text = (escape | literal)+`, with escapes resolved as they are read."""
-        start = self.pos
+        start = self.cursor
         chars: list[str] = []
 
         while not self._at_end():
-            char = self._peek()
+            char = self._character_at_cursor()
             if char == "\\":
                 try:
-                    resolved, self.pos = read_escape(self.text, self.pos)
+                    resolved, self.cursor = read_escape(self.text, self.cursor)
                 except LexError as err:
                     # The escape reader has no offsets; attach them here.
                     raise self._error(
-                        err.message, start=self.pos, end=self.pos + 2
+                        err.message, start=self.cursor, end=self.cursor + 2
                     ) from None
                 chars.append(resolved)
             elif char in WS or char in "()\r\n":
                 break
             else:
                 chars.append(char)
-                self.pos += 1
+                self.cursor += 1
 
-        return Text(self._span(start), "".join(chars))
+        return Text(self._span_from(start), "".join(chars))

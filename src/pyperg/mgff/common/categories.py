@@ -82,7 +82,7 @@ CATEGORY_NAMES: dict[str, str] = {
 }
 
 
-def category_members(abbreviation: str) -> tuple[str, ...]:
+def categories_covered_by(abbreviation: str) -> tuple[str, ...]:
     """The concrete `unicodedata` categories a canonical abbreviation covers."""
     return CATEGORY_GROUPS.get(abbreviation, (abbreviation,))
 
