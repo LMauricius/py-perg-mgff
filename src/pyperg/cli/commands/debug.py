@@ -12,8 +12,8 @@ from ...mgff.lexing.lexer import lex
 from .base import Command
 
 
-class ParseCommand(Command):
-    name = "parse"
+class DebugCommand(Command):
+    name = "debug"
     help = "show the scopes, targets and macros a file defines"
 
     def add_cli_arguments(self, cli_parser: argparse.ArgumentParser) -> None:

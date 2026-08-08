@@ -216,8 +216,7 @@ matches its shape. Part 3 extends this list.
 | Call           | any other item, e.g. `Digit`, `( Digit )+`, `sep(x)by(y)` | Match the macro named by the item's text, applied to the contents of its groups.                                                                    |
 
 A call resolves to what is visible here: a macro, or a parameter of an enclosing
-macro. Calls carrying arguments and calls carrying none rank equally in Part 2,
-but Part 3 places shapes of its own between them.
+macro.
 
 ### Parameters and expansion
 
@@ -283,7 +282,7 @@ particular name, and which one it ends at, is the generator's affair.
 
 `over(list)` says what a **terminal** of the phase means. A phase matching text
 reads `\(` as that character; a phase matching a list reads it as *the match
-whose class is `\(`* — see *Where a match goes* and `class` in Part 3. A phase
+whose class is `\(`* (see *Where a match goes* and `class` in Part 3). A phase
 with a `post` but no `over` reads the text again, which is what a grammar wants
 when the later phase describes where things sit rather than what they are.
 
@@ -330,7 +329,7 @@ t Parse (
 
 The file's attributes describe the grammar as a whole, which is where a generator
 reads settings such as the name of the language it generates. A target's describe
-the phase — see *Targets* in Part 3.
+the phase (see *Targets* in Part 3).
 
 Several `>` lines accumulate, and `#` lines between them are ignored, exactly as
 for a macro. A named list of attributes may be spliced in by naming it, and since
@@ -369,8 +368,8 @@ present throughout.
 
 ### Character matching macros
 
-Targets that match textual characters — every target with no `over`, and always
-the first — add one item shape, a production name recognised by its pattern:
+Targets that match textual characters (every target with no `over`, and always
+the first) add one item shape, a production name recognised by its pattern:
 
 | Interpretation | Shape                                                                                                 | Meaning                                    |
 | -------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------ |
@@ -409,9 +408,9 @@ each is an ordinary item of bare text, recognised by its shape alone.
 
 ### Where a match goes
 
-A grammar that only recognises text needs neither of these. One that produces
-something — a parse tree, a list of tokens, a stream of anything — says where each
-match ends up, and says it on the match itself:
+A grammar that only recognises text (without tokens) needs neither of these.
+One that produces something (a parse tree, a list of tokens, a stream of anything)
+says where each match ends up, and says it on the match itself:
 
 | Attribute      | Meaning                                                 |
 | -------------- | ------------------------------------------------------- |
@@ -438,10 +437,10 @@ underscores. A production may `push` to several lists at once, which is how one
 match reaches a general stream and a channel of its own.
 
 Naming the field on the rule rather than at the call site means a production is
-written once and read the same way everywhere, and everything about a match — what
-it is, what it looks like, where it goes — sits in one attribute list. It also
+written once and read the same way everywhere, and everything about a match 
+(what it is, what it looks like, where it goes) sits in one attribute list. It also
 means a production used in two places writes the same field in both; where that
-is not what was meant, the two uses want two productions.
+is not what was meant, the two uses need two productions.
 
 ---
 
@@ -527,10 +526,6 @@ a group and cannot be the head/body separator.
 **Whitespace is not implicit.** Whitespace separates items in an MGFF file; it
 says nothing about the input being matched. The alternative `< =` is a sequence
 of two characters and matches only the string `<=`.
-
-**Rule order matters.** A shape can be read more than one way, and the higher
-rank wins: `a-z|A-Z` is a character set even where a production bears that name,
-while the single-part `a` or `Letter` yields to the production.
 
 **Calling is naming.** A macro of no parameters is called by writing its name,
 so `Digit` and `sep(x)by(y)` are the same kind of item (a call) and are looked

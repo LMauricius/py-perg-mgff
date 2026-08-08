@@ -7,9 +7,8 @@ listing an instance of it in `COMMANDS`.
 from .base import Command
 from .check import CheckCommand
 from .generate import GenerateCommand
-from .lex import LexCommand
-from .parse import ParseCommand
+from .debug import DebugCommand
 
-COMMANDS: list[Command] = [LexCommand(), ParseCommand(), CheckCommand(), GenerateCommand()]
+COMMANDS: list[Command] = [DebugCommand(), CheckCommand(), GenerateCommand()]
 
 __all__ = ["COMMANDS", "Command"]
