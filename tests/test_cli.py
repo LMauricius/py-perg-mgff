@@ -9,23 +9,23 @@ from pyperg.cli.main import main
 FIXTURE = str(Path(__file__).parent / "fixtures" / "calc.mgff")
 
 
-def test_lex_prints_the_tree(capsys):
-    assert main(["lex", FIXTURE]) == 0
+def test_debug_prints_the_tree(capsys):
+    assert main(["debug", FIXTURE]) == 0
     out = capsys.readouterr().out
     assert "file " in out
-    assert "item t" in out
-    assert "group" in out
+    assert "target Lex" in out
+    assert "macro Digit" in out
 
 
-def test_lex_with_spans(capsys):
-    assert main(["lex", "--spans", FIXTURE]) == 0
-    assert "[1:1-" in capsys.readouterr().out
+def test_debug_with_spans(capsys):
+    assert main(["debug", "--spans", FIXTURE]) == 0
+    assert "target Lex  [3:1-" in capsys.readouterr().out
 
 
-def test_lex_reports_errors(tmp_path, capsys):
+def test_debug_reports_errors(tmp_path, capsys):
     bad = tmp_path / "bad.mgff"
     bad.write_text("d x = (a)(b)\n", encoding="utf-8")
-    assert main(["lex", str(bad)]) == 1
+    assert main(["debug", str(bad)]) == 1
     err = capsys.readouterr().err
     assert "error:" in err
     assert "^" in err  # the excerpt points at the offending column
