@@ -15,14 +15,15 @@ from pyperg.mgff.common.categories import is_category_name
 from pyperg.mgff.common.characters import CHARACTER_PATTERN, CHARACTER_SET_PATTERN
 from pyperg.mgff.common.charset import parse_character_set
 from pyperg.mgff.common.rules import Choice, MacroCall, Reference, Repetition, Sequence
-from pyperg.mgff.semantics.model import resolve
+from pyperg.mgff.semantics.model import parse, rule_tree_factory, resolve
 
 def fixture_text(name: str) -> str:
     return (Path(__file__).parent / "fixtures" / name).read_text(encoding="utf-8")
 
 
 def model_from_text(text: str, name: str = "<test>"):
-    return resolve(lex_text(text, name), name, rule_tree_macro_order())
+    fileScope = parse(lex_text(text, name), rule_tree_factory)
+    return resolve(fileScope, name, rule_tree_macro_order())
 
 
 def first_item(text: str):

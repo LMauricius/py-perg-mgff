@@ -7,8 +7,7 @@ import pytest
 from pyperg.diagnostics.errors import GeneratorError
 from pyperg.generators.antlr import AntlrGenerator
 from pyperg.mgff.lexing.lexer import lex_text
-from pyperg.mgff.semantics.model import resolve
-
+from pyperg.mgff.semantics.model import parse, rule_tree_factory, resolve
 
 def fixture_text(name: str) -> str:
     return (Path(__file__).parent / "fixtures" / name).read_text(encoding="utf-8")
@@ -17,7 +16,8 @@ def fixture_text(name: str) -> str:
 def rendered_grammar_of(text: str, name: str = "<test>") -> str:
     """Resolve through the backend's own vocabulary, as `generate` does."""
     backend = AntlrGenerator()
-    return backend.render(resolve(lex_text(text, name), name, backend.macros()))
+    fileScope = parse(lex_text(text, name), rule_tree_factory)
+    return backend.render(resolve(fileScope, name, backend.macros()))
 
 
 def two_phase(lexer: str, parser: str) -> str:
@@ -284,9 +284,10 @@ def test_left_recursion_reached_through_a_group_is_reported():
 
 def test_the_grammar_is_written_as_one_file(tmp_path):
     backend = AntlrGenerator()
-    model = resolve(
-        lex_text(fixture_text("antlr.mgff"), "antlr.mgff"), "antlr.mgff", backend.macros()
+    fileScope = parse(
+        lex_text(fixture_text("antlr.mgff"), "antlr.mgff"), rule_tree_factory
     )
+    model = resolve(fileScope, "antlr.mgff", backend.macros())
     written_paths = backend.generate(model, tmp_path)
     assert [path.name for path in written_paths] == ["Toy.g4"]
     assert written_paths[0].read_text(encoding="utf-8") == backend.render(model)

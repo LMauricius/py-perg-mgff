@@ -30,6 +30,7 @@ BUILTIN_GENERATORS: dict[str, str] = {
     "python": "pyperg.generators.python:PythonGenerator",
     "regex": "pyperg.generators.regex:RegexGenerator",
     "textmate": "pyperg.generators.textmate:TextMateGenerator",
+    "textmate": "pyperg.generators.html:HtmlGenerator",
 }
 
 

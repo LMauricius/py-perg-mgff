@@ -103,7 +103,7 @@ class GrammarModel:
 # -- resolution ------------------------------------------------------------
 
 
-def resolve(file: File, name: str, macros: list[Macro]) -> GrammarModel:
+def resolve(fileScope: Scope, name: str, macros: list[Macro]) -> GrammarModel:
     """Read a lexed file as the model a rule-tree backend generates from.
 
     Parses the file with the rule-tree factory, then collects the productions per
@@ -113,22 +113,21 @@ def resolve(file: File, name: str, macros: list[Macro]) -> GrammarModel:
     assumed: nothing in MGFF says what `( R )+` means, so the vocabulary is the
     generator's to choose. `mgff.common.rule_tree_macro_order` builds the usual one.
     """
-    grammar = parse(file, rule_tree_factory)
 
     model = GrammarModel(name=name)
     # Earlier targets stay visible to later ones: MGFF leaves the decision to
     # the generator, and a `Parse` naming the tokens of a `Lex` is the usual
     # arrangement — Appendix A writes `d Factor = Number / Ident / \( Expr \)`.
     earlier_targets: list[TargetScope] = []
-    for target_name, scope_target in grammar.targets.items():
+    for target_name, scope_target in fileScope.targets.items():
         model.targets.append(
             resolve_target(macros, target_name, scope_target, earlier_targets)
         )
         earlier_targets.append(scope_target)
     # The file scope resolves on its own, and after the targets: its macros see
     # nothing but each other, since a scope is searched outwards only.
-    model.globals = resolve_target(macros, "", grammar, [])
-    model.attributes = collect_scope_attributes(grammar)
+    model.globals = resolve_target(macros, "", fileScope, [])
+    model.attributes = collect_scope_attributes(fileScope)
     return model
 
 

@@ -8,7 +8,7 @@ from pathlib import Path
 from ...diagnostics.source import SourceFile
 from ...generators import registry
 from ...mgff.lexing.lexer import lex
-from ...mgff.semantics.model import resolve
+from ...mgff.semantics.model import parse, rule_tree_factory, resolve
 from .base import Command
 
 
@@ -46,7 +46,8 @@ class GenerateCommand(Command):
 
         # 2. Lex, parse and resolve the file into a model.
         source = SourceFile.read_from_path(cli_args.file)
-        model = resolve(lex(source), name=source.name, macros=backend.macros())
+        fileScope = parse(lex(source), rule_tree_factory)
+        model = resolve(fileScope, name=source.name, macros=backend.macros())
 
         # 3. Run the backend over the model.
         written_paths = backend.generate(model, Path(cli_args.out_dir))

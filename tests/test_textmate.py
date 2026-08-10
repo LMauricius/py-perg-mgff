@@ -9,7 +9,7 @@ from pyperg.diagnostics.errors import GeneratorError
 from pyperg.generators.textmate import TextMateGenerator
 from pyperg.generators.textmate.scopes import scope_for
 from pyperg.mgff.lexing.lexer import lex_text
-from pyperg.mgff.semantics.model import resolve
+from pyperg.mgff.semantics.model import parse, rule_tree_factory, resolve
 
 regex = pytest.importorskip("regex", reason="the generated patterns use \\p{…}")
 
@@ -20,7 +20,8 @@ def fixture_text(name: str) -> str:
 
 def model_of_text(text: str, name: str = "<test>"):
     """Resolve through the backend's own vocabulary, as `generate` does."""
-    return resolve(lex_text(text, name), name, TextMateGenerator().macros())
+    fileScope = parse(lex_text(text, name), rule_tree_factory)
+    return resolve(fileScope, name, TextMateGenerator().macros())
 
 
 def grammar_of(text: str, name: str = "<test>") -> dict:

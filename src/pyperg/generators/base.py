@@ -1,6 +1,7 @@
 """The interface every generator backend implements."""
 
 from __future__ import annotations
+from typing import Iterable
 
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -23,7 +24,7 @@ class Generator(ABC):
     description: str = ""
 
     @abstractmethod
-    def generate(self, model: GrammarModel, out_dir: Path) -> list[Path]:
+    def generate(self, model: GrammarModel, out_dir: Path) -> Iterable[Path]:
         """Write the generated files and return their paths.
 
         Raises `GeneratorError` when the grammar uses something the backend

@@ -18,7 +18,7 @@ from pyperg.generators.utils.machine import (
 )
 from pyperg.generators.utils.regex import regex_of
 from pyperg.mgff.lexing.lexer import lex_text
-from pyperg.mgff.semantics.model import resolve
+from pyperg.mgff.semantics.model import parse, rule_tree_factory, resolve
 
 MGFF = Path(__file__).parent.parent / "examples" / "mgff.mgff"
 
@@ -49,7 +49,8 @@ t Parse (
 
 
 def build_machine_from_text(text: str, name: str = "<test>"):
-    model = resolve(lex_text(text, name), name, KateGenerator().macros())
+    fileScope = parse(lex_text(text, name), rule_tree_factory)
+    model = resolve(fileScope, name, KateGenerator().macros())
     parse_target = model.target("Parse")
     lex_target = model.target("Lex")
     return (
@@ -270,7 +271,8 @@ def test_a_production_is_classified_the_same_whoever_asks_first():
         "    d Y = b X / b\n"
         ")\n"
     )
-    model = resolve(lex_text(text, "<test>"), "<test>", KateGenerator().macros())
+    fileScope = parse(lex_text(text, "<test>"), rule_tree_factory)
+    model = resolve(fileScope, "<test>", KateGenerator().macros())
     parse_target = model.target("Parse")
     assert parse_target is not None
 
