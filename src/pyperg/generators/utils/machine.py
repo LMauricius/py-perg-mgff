@@ -48,8 +48,8 @@ from ...mgff.common.rules import (
     Rule,
     Sequence,
 )
-from ...mgff.lexing.cst import Item, Text
-from ...mgff.semantics.model import Production, Target
+from ...mgff.itemizing.cst import Item, Text
+from ...mgff.systems.model import Production, Target
 from .styles import styles_of
 from .naming import NameAllocator, safe_identifier
 from .regex import regex_of

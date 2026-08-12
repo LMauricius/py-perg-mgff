@@ -6,29 +6,29 @@ from pathlib import Path
 import pytest
 
 from pyperg.diagnostics.errors import SemanticError
-from pyperg.mgff.grammar.expand import substitute_parameters
-from pyperg.mgff.grammar.macros import ScopeLookupPoint
-from pyperg.mgff.lexing.cst import render_item, signature_of
-from pyperg.mgff.lexing.lexer import lex_text
+from pyperg.mgff.semantics.expand import substitute_parameters
+from pyperg.mgff.semantics.macros import ScopeLookupPoint
+from pyperg.mgff.itemizing.cst import render_item, signature_of
+from pyperg.mgff.itemizing.itemizer import itemize_text
 from pyperg.mgff.common.order import rule_tree_macro_order
 from pyperg.mgff.common.categories import is_category_name
 from pyperg.mgff.common.characters import CHARACTER_PATTERN, CHARACTER_SET_PATTERN
 from pyperg.mgff.common.charset import parse_character_set
 from pyperg.mgff.common.rules import Choice, MacroCall, Reference, Repetition, Sequence
-from pyperg.mgff.semantics.model import parse, rule_tree_factory, resolve
+from pyperg.mgff.systems.model import parse, rule_tree_factory, resolve
 
 def fixture_text(name: str) -> str:
     return (Path(__file__).parent / "fixtures" / name).read_text(encoding="utf-8")
 
 
 def model_from_text(text: str, name: str = "<test>"):
-    fileScope = parse(lex_text(text, name), rule_tree_factory)
+    fileScope = parse(itemize_text(text, name), rule_tree_factory)
     return resolve(fileScope, name, rule_tree_macro_order())
 
 
 def first_item(text: str):
     """The single item of a one-item line, for the shape tests."""
-    return lex_text(text).lines[0].items[0]
+    return itemize_text(text).lines[0].items[0]
 
 
 # -- character sets ---------------------------------------------------------
@@ -241,8 +241,8 @@ def test_a_call_of_the_wrong_shape_finds_no_macro():
 def test_a_parameter_is_substituted_by_its_argument():
     # The shape binds a call's arguments to the parameters, so expansion is
     # substitution alone and has no arity left to check.
-    body = lex_text("R (S R)*").lines[0].items
-    argument = lex_text("a").lines[0].items
+    body = itemize_text("R (S R)*").lines[0].items
+    argument = itemize_text("a").lines[0].items
     expanded = substitute_parameters(body, {"R": argument})
     assert " ".join(render_item(item) for item in expanded) == "a (S a)*"
 

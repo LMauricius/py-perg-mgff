@@ -5,10 +5,10 @@ from __future__ import annotations
 import argparse
 
 from ...diagnostics.source import SourceFile
-from ...mgff.grammar.parser import parse
-from ...mgff.grammar.scope import MacroSource, Scope
-from ...mgff.lexing.cst import Item, render_item
-from ...mgff.lexing.lexer import lex
+from ...mgff.semantics.parser import parse
+from ...mgff.semantics.scope import MacroSource, Scope
+from ...mgff.itemizing.cst import Item, render_item
+from ...mgff.itemizing.itemizer import itemize
 from .base import Command
 
 
@@ -31,7 +31,7 @@ class DebugCommand(Command):
 
     def run(self, cli_args: argparse.Namespace) -> int:
         source = SourceFile.read_from_path(cli_args.file)
-        root = parse(lex(source))
+        root = parse(itemize(source))
         print(
             _render_scope(root, source.name, cli_args.spans, cli_args.absorbed),
             end="",

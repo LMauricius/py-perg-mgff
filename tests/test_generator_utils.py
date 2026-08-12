@@ -2,12 +2,12 @@
 
 import pytest
 
-from pyperg.mgff.lexing.lexer import lex_text
+from pyperg.mgff.itemizing.itemizer import itemize_text
 from pyperg.mgff.common.characters import CHARACTER_SET
 from pyperg.mgff.common.charset import parse_character_set
 from pyperg.mgff.common.rules import Choice, MacroCall, Reference, Repetition, Sequence
 from pyperg.mgff.common.order import rule_tree_macro_order
-from pyperg.mgff.semantics.model import Production, parse, rule_tree_factory, resolve
+from pyperg.mgff.systems.model import Production, parse, rule_tree_factory, resolve
 from pyperg.diagnostics.errors import GeneratorError
 from pyperg.generators.utils.classes import match_classes_of
 from pyperg.generators.utils.pipeline import (
@@ -47,7 +47,7 @@ from pyperg.generators.utils.xmlwrite import Element, escape_attribute
 
 def character_set_call(text: str) -> MacroCall:
     """A character-set node, built from the item that spells the set."""
-    item = lex_text(text).lines[0].items[0]
+    item = itemize_text(text).lines[0].items[0]
     assert parse_character_set(item.text) is not None
     return MacroCall(macro=CHARACTER_SET, item=item)
 
@@ -386,7 +386,7 @@ t Parse (
 
 def highlight_stages_from_text(text: str):
     """The phases of a grammar, with every `over` already resolved."""
-    fileScope = parse(lex_text(text, "<test>"), rule_tree_factory)
+    fileScope = parse(itemize_text(text, "<test>"), rule_tree_factory)
     model = resolve(fileScope, "<test>", rule_tree_macro_order())
     stages = target_stage_chain_of(model)
     for stage in stages:

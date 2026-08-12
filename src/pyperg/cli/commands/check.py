@@ -8,9 +8,9 @@ from __future__ import annotations
 import argparse
 
 from ...diagnostics.source import SourceFile
-from ...mgff.grammar.parser import parse
-from ...mgff.grammar.scope import Scope
-from ...mgff.lexing.lexer import lex
+from ...mgff.semantics.parser import parse
+from ...mgff.semantics.scope import Scope
+from ...mgff.itemizing.itemizer import itemize
 from .base import Command
 
 
@@ -38,7 +38,7 @@ class CheckCommand(Command):
     def run(self, cli_args: argparse.Namespace) -> int:
         # Errors of either part are raised here and reported by `cli.main`.
         source = SourceFile.read_from_path(cli_args.file)
-        root = parse(lex(source))
+        root = parse(itemize(source))
 
         macros, targets = _count_macros_and_targets(root)
         print(f"{source.name}: ok, {macros} macros, {targets} targets")

@@ -77,7 +77,7 @@ class Line:
 
 
 @dataclass(slots=True)
-class File:
+class Document:
     """A whole MGFF file: its top-level lines."""
 
     name: str

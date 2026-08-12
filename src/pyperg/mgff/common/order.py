@@ -29,9 +29,9 @@ silently take a name a grammar wanted for itself.
 
 from __future__ import annotations
 
-from ..grammar.macros import Macro, MacroDefinition, ScopeLookupPoint
-from ..grammar.shapes import MacroShape
-from ..grammar.signatures import (
+from ..semantics.macros import Macro, MacroDefinition, ScopeLookupPoint
+from ..semantics.shapes import MacroShape
+from ..semantics.signatures import (
     ARGUMENTS_PATTERN,
     NAME_PATTERN,
     extracts_nothing,

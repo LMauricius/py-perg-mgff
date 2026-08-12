@@ -4,16 +4,16 @@ from pathlib import Path
 
 import pytest
 
-from pyperg.diagnostics.errors import LexError
-from pyperg.mgff.lexing.cst import Group, Text, render_item
-from pyperg.mgff.lexing.lexer import lex_text
+from pyperg.diagnostics.errors import ItemizationError
+from pyperg.mgff.itemizing.cst import Group, Text, render_item
+from pyperg.mgff.itemizing.itemizer import itemize_text
 
 FIXTURE = Path(__file__).parent / "fixtures" / "calc.mgff"
 
 
 def items_of_single_line(text: str):
     """The items of a single-line source."""
-    file = lex_text(text)
+    file = itemize_text(text)
     assert len(file.lines) == 1
     return file.lines[0].items
 
@@ -32,7 +32,7 @@ def test_space_outside_parentheses_separates():
 
 def test_group_spans_lines():
     """A line ends only at a newline outside every group."""
-    file = lex_text("t Lex (\n    d Digit = 0-9\n)")
+    file = itemize_text("t Lex (\n    d Digit = 0-9\n)")
     assert len(file.lines) == 1
     group = file.lines[0].items[-1].groups[0]
     assert [len(line.items) for line in group.lines] == [0, 4, 0]
@@ -45,14 +45,14 @@ def test_item_alternates_text_and_groups():
 
 
 def test_two_adjacent_groups_are_an_error():
-    with pytest.raises(LexError, match="separated by text"):
-        lex_text("(a)(b)")
+    with pytest.raises(ItemizationError, match="separated by text"):
+        itemize_text("(a)(b)")
 
 
 @pytest.mark.parametrize("text", ["(a", "a)", "t Lex ( d x = y"])
 def test_unbalanced_parentheses(text):
-    with pytest.raises(LexError):
-        lex_text(text)
+    with pytest.raises(ItemizationError):
+        itemize_text(text)
 
 
 def test_escaped_parenthesis_is_text():
@@ -62,7 +62,7 @@ def test_escaped_parenthesis_is_text():
 
 
 def test_blank_lines_carry_no_items_of_single_line():
-    file = lex_text("d a = b\n\n   \t \nd c = d")
+    file = itemize_text("d a = b\n\n   \t \nd c = d")
     assert [line.is_blank for line in file.lines] == [False, True, True, False]
 
 
@@ -73,14 +73,14 @@ def test_spans_point_at_the_source():
 
 
 def test_error_carries_a_span():
-    with pytest.raises(LexError) as excinfo:
-        lex_text("d x = y\nd z = (a)(b)")
+    with pytest.raises(ItemizationError) as excinfo:
+        itemize_text("d x = y\nd z = (a)(b)")
     assert excinfo.value.span is not None
     assert excinfo.value.span.start.line == 2
 
 
 def test_appendix_example_lexes():
-    file = lex_text(FIXTURE.read_text(encoding="utf-8"), FIXTURE.name)
+    file = itemize_text(FIXTURE.read_text(encoding="utf-8"), FIXTURE.name)
     first_item_texts = [line.items[0].text for line in file.lines if not line.is_blank]
     assert first_item_texts.count("t") == 2  # the Lex and Parse targets
     assert "d" in first_item_texts  # the top-level sep(R)by(S) macro
@@ -95,11 +95,11 @@ def test_render_round_trips_an_item():
 
 def test_nesting_has_a_limit():
     """A file no one wrote by hand is reported, not left to exhaust the stack."""
-    with pytest.raises(LexError, match="nested more than"):
-        lex_text("d X = " + "(" * 400 + "a" + ")" * 400)
+    with pytest.raises(ItemizationError, match="nested more than"):
+        itemize_text("d X = " + "(" * 400 + "a" + ")" * 400)
 
 
 def test_a_stray_carriage_return_says_so():
     """A `\\r` outside a `\\r\\n` pair ends nothing, and the message says which."""
-    with pytest.raises(LexError, match="stray carriage return"):
-        lex_text("d A = a\rd B = b")
+    with pytest.raises(ItemizationError, match="stray carriage return"):
+        itemize_text("d A = a\rd B = b")

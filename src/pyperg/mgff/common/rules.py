@@ -19,9 +19,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from ..grammar.macros import MacroDefinition
-from ..lexing.cst import Item
-
+from ..semantics.macros import MacroDefinition
+from ..itemizing.cst import Item
 
 @dataclass(slots=True)
 class Sequence:

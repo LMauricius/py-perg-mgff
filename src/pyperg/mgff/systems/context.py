@@ -15,7 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
-from ..grammar.scope import MacroSource, Scope
+from ..semantics.scope import MacroSource, Scope
 
 
 class DefinitionResolver(Protocol):

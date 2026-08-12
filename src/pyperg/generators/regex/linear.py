@@ -44,7 +44,7 @@ from collections.abc import Callable, Mapping
 
 from ...diagnostics.errors import GeneratorError
 from ...mgff.common.rules import Reference, Rule, Sequence
-from ...mgff.semantics.model import Production
+from ...mgff.systems.model import Production
 from ..utils.graph import (
     callees_before_callers,
     mutually_recursive_groups,

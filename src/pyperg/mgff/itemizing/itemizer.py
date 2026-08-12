@@ -18,10 +18,10 @@ every group.
 
 from __future__ import annotations
 
-from ...diagnostics.errors import LexError
+from ...diagnostics.errors import ItemizationError
 from ...diagnostics.source import SourceFile
 from ...diagnostics.span import Span
-from .cst import File, Group, Item, Line, Text
+from .cst import Document, Group, Item, Line, Text
 from .escapes import read_escape
 
 WS = " \t"
@@ -33,20 +33,20 @@ WS = " \t"
 MAX_GROUP_NESTING = 64
 
 
-def lex(source: SourceFile) -> File:
+def itemize(source: SourceFile) -> Document:
     """Split a source file into lines, items and groups.
 
     Raises `LexError`, with a span, on anything the Part 1 grammar rejects.
     """
-    return _Lexer(source).lex_file()
+    return Itemizer(source).itemize_file()
 
 
-def lex_text(text: str, name: str = "<input>") -> File:
+def itemize_text(text: str, name: str = "<input>") -> Document:
     """Convenience wrapper for lexing a string."""
-    return lex(SourceFile(name, text))
+    return itemize(SourceFile(name, text))
 
 
-class _Lexer:
+class Itemizer:
     """A cursor over the source text, plus the recursive-descent routines."""
 
     def __init__(self, source: SourceFile) -> None:
@@ -67,10 +67,14 @@ class _Lexer:
 
     def _span_from(self, start: int, end: int | None = None) -> Span:
         end = self.cursor if end is None else end
-        return Span(self.source.position_at_offset(start), self.source.position_at_offset(end))
+        return Span(
+            self.source.position_at_offset(start), self.source.position_at_offset(end)
+        )
 
-    def _error(self, message: str, start: int, end: int | None = None) -> LexError:
-        return LexError(message, self._span_from(start, end))
+    def _error(
+        self, message: str, start: int, end: int | None = None
+    ) -> ItemizationError:
+        return ItemizationError(message, self._span_from(start, end))
 
     def _skip_spaces_and_tabs(self) -> None:
         while self._character_at_cursor() in WS and not self._at_end():
@@ -91,10 +95,10 @@ class _Lexer:
 
     # -- grammar rules -----------------------------------------------------
 
-    def lex_file(self) -> File:
+    def itemize_file(self) -> Document:
         """`file = lines`, ending at end of input."""
         lines = self._read_lines(in_group=False)
-        return File(self.source.name, lines)
+        return Document(self.source.name, lines)
 
     def _read_lines(self, in_group: bool, open_at: int = 0) -> list[Line]:
         """`lines = line (NL line)*`.
@@ -199,7 +203,7 @@ class _Lexer:
             if char == "\\":
                 try:
                     resolved, self.cursor = read_escape(self.text, self.cursor)
-                except LexError as err:
+                except ItemizationError as err:
                     # The escape reader has no offsets; attach them here.
                     raise self._error(
                         err.message, start=self.cursor, end=self.cursor + 2

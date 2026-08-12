@@ -39,7 +39,7 @@ from collections.abc import Callable
 
 from ...diagnostics.errors import GeneratorError
 from ...mgff.common.rules import Choice, Reference, Repetition, Rule, Sequence
-from ...mgff.semantics.model import Production
+from ...mgff.systems.model import Production
 from ..utils.graph import mutually_recursive_groups
 from ..utils.walk import can_match_empty, top_level_parts
 

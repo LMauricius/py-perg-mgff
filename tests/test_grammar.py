@@ -5,8 +5,8 @@ from pathlib import Path
 import pytest
 
 from pyperg.diagnostics.errors import GrammarSyntaxError, SemanticError
-from pyperg.mgff.grammar.parser import parse
-from pyperg.mgff.lexing.lexer import lex_text
+from pyperg.mgff.semantics.parser import parse
+from pyperg.mgff.itemizing.itemizer import itemize_text
 
 CALC = Path(__file__).parent / "fixtures" / "calc.mgff"
 PREFIX = Path(__file__).parent / "fixtures" / "prefix.mgff"
@@ -14,11 +14,11 @@ PREFIX = Path(__file__).parent / "fixtures" / "prefix.mgff"
 
 def parse_source(text: str):
     """Parse a source string into its file scope."""
-    return parse(lex_text(text))
+    return parse(itemize_text(text))
 
 
 def parse_fixture_file(path: Path):
-    return parse(lex_text(path.read_text(encoding="utf-8"), str(path)))
+    return parse(itemize_text(path.read_text(encoding="utf-8"), str(path)))
 
 
 # -- the specification's own example ---------------------------------------
@@ -207,9 +207,9 @@ def test_a_prefix_may_not_collide_with_an_outer_name():
 def test_a_target_inside_a_prefix_scope_is_rejected():
     """A phase is a phase of the file; one nowhere near the top generates nothing."""
     with pytest.raises(GrammarSyntaxError, match="inside another scope"):
-        parse(lex_text("p Util_ (\n  t Lex (\n    d Int = 0-9\n  )\n)\n"))
+        parse(itemize_text("p Util_ (\n  t Lex (\n    d Int = 0-9\n  )\n)\n"))
 
 
 def test_a_target_inside_a_target_is_rejected():
     with pytest.raises(GrammarSyntaxError, match="inside another scope"):
-        parse(lex_text("t Outer (\n  d A = a\n  t Inner (\n    d B = b\n  )\n)\n"))
+        parse(itemize_text("t Outer (\n  d A = a\n  t Inner (\n    d B = b\n  )\n)\n"))

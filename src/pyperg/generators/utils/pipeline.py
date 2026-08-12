@@ -38,8 +38,8 @@ from dataclasses import dataclass
 from ...diagnostics.errors import GeneratorError
 from ...mgff.common.characters import character_set_matched_by
 from ...mgff.common.rules import Choice, Reference, Rule
-from ...mgff.lexing.escapes import escape_character
-from ...mgff.semantics.model import GrammarModel, Production, Target
+from ...mgff.itemizing.escapes import escape_character
+from ...mgff.systems.model import GrammarModel, Production, Target
 from .classes import match_classes_of
 from .settings import setting_value
 from .streams import pushed_list_names_of

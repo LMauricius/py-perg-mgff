@@ -2,8 +2,8 @@
 
 import pytest
 
-from pyperg.diagnostics.errors import LexError
-from pyperg.mgff.lexing.escapes import read_escape
+from pyperg.diagnostics.errors import ItemizationError
+from pyperg.mgff.itemizing.escapes import read_escape
 
 def escaped_character(text: str) -> str:
     """The character an escape denotes, checking that the whole text is consumed."""
@@ -49,7 +49,7 @@ def test_valid_escapes(text, expected):
     ],
 )
 def test_invalid_escapes(text):
-    with pytest.raises(LexError):
+    with pytest.raises(ItemizationError):
         read_escape(text, 0)
 
 
@@ -60,5 +60,5 @@ def test_escape_carries_no_role():
 
 def test_a_named_sequence_is_not_one_character():
     """`\\<NAME>` denotes one character; a name standing for several is rejected."""
-    with pytest.raises(LexError, match="sequence of 3 characters"):
+    with pytest.raises(ItemizationError, match="sequence of 3 characters"):
         read_escape(r"\<KEYCAP_NUMBER_SIGN>", 0)

@@ -25,7 +25,7 @@ are — but not as a `match`, so that case belongs to `repository`.
 from __future__ import annotations
 
 from ...diagnostics.errors import GeneratorError
-from ...mgff.semantics.model import Production
+from ...mgff.systems.model import Production
 from ..utils.regex import (
     FindProductionByName,
     escape_character,

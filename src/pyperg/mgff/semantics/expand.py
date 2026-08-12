@@ -17,7 +17,7 @@ definition as `R` and `S` and there is no arity to check here.
 from __future__ import annotations
 
 from ...diagnostics.span import Span
-from ..lexing.cst import Group, Item, Line, Text, call_arguments_of
+from ..itemizing.cst import Group, Item, Line, Text, call_arguments_of
 
 __all__ = [
     "call_arguments_of",

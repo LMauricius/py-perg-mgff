@@ -11,7 +11,7 @@ The one question that *is* format-specific — how to spell a match — is not h
 from __future__ import annotations
 
 from ...diagnostics.errors import GeneratorError
-from ...mgff.semantics.model import Production, Target
+from ...mgff.systems.model import Production, Target
 from .walk import referenced_production_names
 
 #: The macro a target starts at. Every highlighting backend begins there.

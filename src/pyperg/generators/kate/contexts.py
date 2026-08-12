@@ -47,7 +47,7 @@ from __future__ import annotations
 import sys
 
 from ...mgff.common.rules import Reference
-from ...mgff.semantics.model import GrammarModel, Production, Target
+from ...mgff.systems.model import GrammarModel, Production, Target
 from ..utils.styles import styles_of
 from ..utils.highlight import token_names_in_order
 from ..utils.machine import POP

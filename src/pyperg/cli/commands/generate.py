@@ -7,8 +7,8 @@ from pathlib import Path
 
 from ...diagnostics.source import SourceFile
 from ...generators import registry
-from ...mgff.lexing.lexer import lex
-from ...mgff.semantics.model import parse, rule_tree_factory, resolve
+from ...mgff.itemizing.itemizer import itemize
+from ...mgff.systems.model import parse, rule_tree_factory, resolve
 from .base import Command
 
 
@@ -46,7 +46,7 @@ class GenerateCommand(Command):
 
         # 2. Lex, parse and resolve the file into a model.
         source = SourceFile.read_from_path(cli_args.file)
-        fileScope = parse(lex(source), rule_tree_factory)
+        fileScope = parse(itemize(source), rule_tree_factory)
         model = resolve(fileScope, name=source.name, macros=backend.macros())
 
         # 3. Run the backend over the model.

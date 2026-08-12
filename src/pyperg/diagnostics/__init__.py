@@ -2,7 +2,7 @@
 
 from .errors import (
     GeneratorError,
-    LexError,
+    ItemizationError,
     PyPergError,
     SemanticError,
     SourceError,
@@ -14,7 +14,7 @@ from .span import Position, Span
 
 __all__ = [
     "GeneratorError",
-    "LexError",
+    "ItemizationError",
     "Position",
     "PyPergError",
     "SemanticError",

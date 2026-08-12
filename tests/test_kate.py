@@ -8,8 +8,8 @@ import pytest
 from pyperg.diagnostics.errors import GeneratorError
 from pyperg.generators.kate import KateGenerator
 from pyperg.generators.kate.styles import item_data_for_styles
-from pyperg.mgff.lexing.lexer import lex_text
-from pyperg.mgff.semantics.model import parse, rule_tree_factory, resolve
+from pyperg.mgff.itemizing.itemizer import itemize_text
+from pyperg.mgff.systems.model import parse, rule_tree_factory, resolve
 
 def fixture_text(name: str) -> str:
     return (Path(__file__).parent / "fixtures" / name).read_text(encoding="utf-8")
@@ -17,7 +17,7 @@ def fixture_text(name: str) -> str:
 
 def model_of_text(text: str, name: str = "<test>"):
     """Resolve through the backend's own vocabulary, as `generate` does."""
-    fileScope = parse(lex_text(text, name), rule_tree_factory)
+    fileScope = parse(itemize_text(text, name), rule_tree_factory)
     return resolve(fileScope, name, KateGenerator().macros())
 
 

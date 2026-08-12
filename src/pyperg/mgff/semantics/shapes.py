@@ -24,7 +24,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from ..lexing.cst import Item
+from ..itemizing.cst import Item
 
 #: Reads a matched call: the item, and the match of its shape's pattern. The
 #: keys of the result are the parameter names a `produce_call` is written with.

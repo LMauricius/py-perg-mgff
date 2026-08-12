@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import unicodedata
 
-from ...diagnostics.errors import LexError
+from ...diagnostics.errors import ItemizationError
 
 # Single-character escapes. `\_` (space) is particular to MGFF.
 SIMPLE_ESCAPES: dict[str, str] = {
@@ -42,11 +42,11 @@ _NAME_CHARS = set("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_")
 def _character_for_code_point(value: int) -> str:
     """Turn a numeric escape's value into a character, rejecting the invalid range."""
     if value > 0x10FFFF:
-        raise LexError(
+        raise ItemizationError(
             f"escape denotes U+{value:X}, above the maximum code point U+10FFFF"
         )
     if 0xD800 <= value <= 0xDFFF:
-        raise LexError(f"escape denotes the surrogate code point U+{value:04X}")
+        raise ItemizationError(f"escape denotes the surrogate code point U+{value:04X}")
     return chr(value)
 
 
@@ -58,15 +58,15 @@ def read_escape(text: str, index: int) -> tuple[str, int]:
     """
     assert text[index] == "\\"
     if index + 1 >= len(text):
-        raise LexError("backslash at end of input")
+        raise ItemizationError("backslash at end of input")
 
     kind = text[index + 1]
 
     # Whitespace is written `\_` or `\t`, never as an escaped literal space.
     if kind in " \t":
-        raise LexError("backslash followed by whitespace; write \\_ or \\t")
+        raise ItemizationError("backslash followed by whitespace; write \\_ or \\t")
     if kind in "\r\n":
-        raise LexError("backslash at end of line")
+        raise ItemizationError("backslash at end of line")
 
     if kind in SIMPLE_ESCAPES:
         return SIMPLE_ESCAPES[kind], index + 2
@@ -76,34 +76,34 @@ def read_escape(text: str, index: int) -> tuple[str, int]:
         count = NUMERIC_ESCAPES[kind]
         digits = text[index + 2 : index + 2 + count]
         if len(digits) < count or any(d not in _HEX_DIGITS for d in digits):
-            raise LexError(f"\\{kind} needs exactly {count} hexadecimal digits")
+            raise ItemizationError(f"\\{kind} needs exactly {count} hexadecimal digits")
         return _character_for_code_point(int(digits, 16)), index + 2 + count
 
     # \<NAME>: a Unicode character name, upper case with _ for each space.
     if kind == "<":
         end = text.find(">", index + 2)
         if end < 0:
-            raise LexError("unterminated \\<NAME> escape")
+            raise ItemizationError("unterminated \\<NAME> escape")
         name = text[index + 2 : end]
         if not name or any(c not in _NAME_CHARS for c in name):
-            raise LexError(f"invalid character name {name!r}")
+            raise ItemizationError(f"invalid character name {name!r}")
         try:
             found = unicodedata.lookup(name.replace("_", " "))
         except KeyError:
-            raise LexError(f"no character is named {name!r}") from None
+            raise ItemizationError(f"no character is named {name!r}") from None
         # `lookup` answers named *sequences* as well — `KEYCAP_NUMBER_SIGN` is
         # three code points — and an escape denotes exactly one character. Such
         # a name is rejected here, where what is wrong can still be said; read
         # on, it would reach the resolver as an unknown name spelled in
         # characters nobody wrote.
         if len(found) != 1:
-            raise LexError(
+            raise ItemizationError(
                 f"{name!r} names a sequence of {len(found)} characters, and an "
                 "escape denotes exactly one; write them out one escape each"
             )
         return found, end + 1
 
-    raise LexError(f"unknown escape \\{kind}")
+    raise ItemizationError(f"unknown escape \\{kind}")
 
 
 def escape_character(char: str) -> str:

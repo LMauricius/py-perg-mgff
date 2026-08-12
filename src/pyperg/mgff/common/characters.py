@@ -17,11 +17,11 @@ from __future__ import annotations
 
 import re
 
-from ..grammar.macros import MacroDefinition
-from ..grammar.shapes import MacroShape
-from ..grammar.signatures import NAME_CHARACTER, make_shape
-from ..lexing.cst import Item
-from ..semantics.context import CallContext
+from ..semantics.macros import MacroDefinition
+from ..semantics.shapes import MacroShape
+from ..semantics.signatures import NAME_CHARACTER, make_shape
+from ..itemizing.cst import Item
+from ..systems.context import CallContext
 from .rules import MacroCall, Rule
 from .categories import CATEGORY_NAMES
 from .charset import CharacterSet, parse_character_set

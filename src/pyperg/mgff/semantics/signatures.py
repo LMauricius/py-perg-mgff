@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import re
 
-from ..lexing.cst import Item, call_arguments_of
+from ..itemizing.cst import Item, call_arguments_of
 from .shapes import ExtractArguments, MacroShape
 
 

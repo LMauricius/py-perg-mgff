@@ -5,14 +5,14 @@ import re
 import pytest
 
 from pyperg.diagnostics.errors import SemanticError
-from pyperg.mgff.grammar.macros import MacroDefinition, ScopeLookupPoint
-from pyperg.mgff.grammar.signatures import NAME_CHARACTER, make_shape
-from pyperg.mgff.lexing.cst import Item
-from pyperg.mgff.lexing.lexer import lex_text
+from pyperg.mgff.semantics.macros import MacroDefinition, ScopeLookupPoint
+from pyperg.mgff.semantics.signatures import NAME_CHARACTER, make_shape
+from pyperg.mgff.itemizing.cst import Item
+from pyperg.mgff.itemizing.itemizer import itemize_text
 from pyperg.mgff.common.order import rule_tree_macro_order
-from pyperg.mgff.semantics.context import CallContext
+from pyperg.mgff.systems.context import CallContext
 from pyperg.mgff.common.rules import MacroCall, Rule, Reference, Repetition
-from pyperg.mgff.semantics.model import parse, rule_tree_factory, resolve
+from pyperg.mgff.systems.model import parse, rule_tree_factory, resolve
 
 def capture_args(item: Item, match: re.Match[str]) -> dict[str, object]:
     """What a capture carries: the name in front of the colon, and the rule.
@@ -55,7 +55,7 @@ def macro_order_with_capture() -> list:
 
 
 def model_from_text(text: str, macros: list | None = None):
-    fileScope = parse(lex_text(text, "<test>"), rule_tree_factory)
+    fileScope = parse(itemize_text(text, "<test>"), rule_tree_factory)
     return resolve(fileScope, "<test>", macros or macro_order_with_capture())
 
 

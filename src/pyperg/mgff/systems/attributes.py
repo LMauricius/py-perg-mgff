@@ -19,8 +19,8 @@ business. This module only reads them.
 from __future__ import annotations
 
 from ...diagnostics.errors import SemanticError
-from ..grammar.scope import MacroSource, Scope
-from ..lexing.cst import Item, render_item
+from ..semantics.scope import MacroSource, Scope
+from ..itemizing.cst import Item, render_item
 
 
 def parse_attribute(item: Item) -> tuple[str, list[str]]:

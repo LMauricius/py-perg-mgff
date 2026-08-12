@@ -38,7 +38,7 @@ from dataclasses import dataclass, field
 
 from ...diagnostics.errors import SemanticError
 from ...diagnostics.span import Span
-from ..lexing.cst import Group, Item, signature_of
+from ..itemizing.cst import Group, Item, signature_of
 from .macros import MacroDefinition
 
 __all__ = [

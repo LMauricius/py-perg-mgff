@@ -29,11 +29,11 @@ from typing import cast
 
 from ...diagnostics.errors import SemanticError
 from ...diagnostics.span import Span
-from ..grammar.expand import expand_alternatives
-from ..grammar.macros import Macro, ProduceCall, ScopeLookupPoint
-from ..grammar.parser import parse
-from ..grammar.scope import MacroSource, Scope, TargetScope, signature_of
-from ..lexing.cst import File, Group, Item, items_in_group, render_item
+from ..semantics.expand import expand_alternatives
+from ..semantics.macros import Macro, ProduceCall, ScopeLookupPoint
+from ..semantics.parser import parse
+from ..semantics.scope import MacroSource, Scope, TargetScope, signature_of
+from ..itemizing.cst import Document, Group, Item, items_in_group, render_item
 from .attributes import collect_attributes, collect_scope_attributes
 from .context import CallContext
 from ..common.rules import Choice, Rule, Reference, Sequence
@@ -326,7 +326,9 @@ class _TargetResolver:
         if isinstance(value, Group):
             return self.rule_for_items(items_in_group(value), scope, depth)
         if isinstance(value, list) and all(isinstance(one, Group) for one in value):
-            return [self.rule_for_items(items_in_group(one), scope, depth) for one in value]
+            return [
+                self.rule_for_items(items_in_group(one), scope, depth) for one in value
+            ]
         return value
 
     # -- name lookup -------------------------------------------------------

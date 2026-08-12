@@ -29,7 +29,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from ...diagnostics.errors import GeneratorError
-from ...mgff.semantics.model import GrammarModel, Production, Target
+from ...mgff.systems.model import GrammarModel, Production, Target
 from ..utils.pipeline import (
     FINAL_TARGET,
     rewrite_terminals_as_calls,

@@ -29,7 +29,7 @@ from collections.abc import Callable
 
 from ...diagnostics.errors import GrammarSyntaxError
 from ...diagnostics.span import Position, Span
-from ..lexing.cst import File, Group, Line
+from ..itemizing.cst import Document, Group, Line
 from .macros import MacroDefinition, ProduceCall
 from .scope import MacroSource, Scope, TargetScope, macro_source_from_head
 from .signatures import definition_shape
@@ -62,7 +62,7 @@ def line_marker_of(line: Line) -> str | None:
     return first.text
 
 
-def parse(file: File, factory: ProduceCallFactory | None = None) -> Scope:
+def parse(file: Document, factory: ProduceCallFactory | None = None) -> Scope:
     """Read a lexed file as the scope it describes.
 
     `factory` says what a call of each definition produces; without one the

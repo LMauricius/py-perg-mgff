@@ -26,7 +26,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ...diagnostics.errors import GeneratorError
-from ...mgff.semantics.model import GrammarModel, Production
+from ...mgff.systems.model import GrammarModel, Production
 from ..base import Generator
 from ..utils.emit import Emitter
 from ..utils.highlight import START_PRODUCTION

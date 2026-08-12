@@ -47,7 +47,7 @@ import sys
 
 from ...diagnostics.errors import GeneratorError
 from ...mgff.common.rules import Reference, Rule
-from ...mgff.semantics.model import GrammarModel, Production, Target
+from ...mgff.systems.model import GrammarModel, Production, Target
 from ..utils.styles import styles_of
 from ..utils.highlight import token_names_in_order
 from ..utils.machine import POP, STAY

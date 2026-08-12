@@ -18,7 +18,7 @@ class SourceError(PyPergError):
         self.span = span
 
 
-class LexError(SourceError):
+class ItemizationError(SourceError):
     """Part 1: the file does not split into lines, items and groups."""
 
 

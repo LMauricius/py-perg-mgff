@@ -7,9 +7,8 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 
 from ..mgff.common.order import rule_tree_macro_order
-from ..mgff.grammar.macros import Macro, MacroDefinition
-from ..mgff.semantics.model import GrammarModel
-
+from ..mgff.semantics.macros import Macro, MacroDefinition
+from ..mgff.systems.model import GrammarModel
 
 class Generator(ABC):
     """A backend turning a resolved grammar into output files.
