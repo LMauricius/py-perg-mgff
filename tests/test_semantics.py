@@ -15,7 +15,7 @@ from pyperg.mgff.common.categories import is_category_name
 from pyperg.mgff.common.characters import CHARACTER_PATTERN, CHARACTER_SET_PATTERN
 from pyperg.mgff.common.charset import parse_character_set
 from pyperg.mgff.common.rules import Choice, MacroCall, Reference, Repetition, Sequence
-from pyperg.mgff.systems.model import parse, rule_tree_factory, resolve
+from pyperg.mgff.systems.grammar import parse, rule_tree_factory, resolve
 
 def fixture_text(name: str) -> str:
     return (Path(__file__).parent / "fixtures" / name).read_text(encoding="utf-8")

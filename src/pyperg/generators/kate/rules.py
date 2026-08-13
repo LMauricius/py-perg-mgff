@@ -33,7 +33,7 @@ from dataclasses import dataclass
 from ...diagnostics.errors import GeneratorError
 from ...mgff.common.characters import character_set_matched_by
 from ...mgff.common.rules import Rule, Repetition, Sequence
-from ...mgff.systems.model import Production
+from ...mgff.systems.grammar import Production
 from ..utils.naming import NameAllocator, safe_identifier
 from ..utils.regex import regex_of
 from ..utils.walk import top_level_parts, merge_adjacent_literals, literal_of

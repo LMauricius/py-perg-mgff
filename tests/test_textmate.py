@@ -9,7 +9,7 @@ from pyperg.diagnostics.errors import GeneratorError
 from pyperg.generators.textmate import TextMateGenerator
 from pyperg.generators.textmate.scopes import scope_for
 from pyperg.mgff.itemizing.itemizer import itemize_text
-from pyperg.mgff.systems.model import parse, rule_tree_factory, resolve
+from pyperg.mgff.systems.grammar import parse, rule_tree_factory, resolve
 
 regex = pytest.importorskip("regex", reason="the generated patterns use \\p{…}")
 

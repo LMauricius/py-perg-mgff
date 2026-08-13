@@ -5,7 +5,7 @@ from typing import Iterable
 
 from pathlib import Path
 
-from ...mgff.systems.model import GrammarModel
+from ...mgff.systems.grammar import GrammarModel
 from ..base import Generator
 
 

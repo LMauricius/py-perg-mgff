@@ -22,7 +22,7 @@ How a match should *look* is a different question, and `utils.styles` answers it
 from __future__ import annotations
 
 from ...diagnostics.errors import GeneratorError
-from ...mgff.systems.model import Production
+from ...mgff.systems.grammar import Production
 
 def match_classes_of(production: Production) -> list[str]:
     """The classes a production's match carries, empty when it carries none.

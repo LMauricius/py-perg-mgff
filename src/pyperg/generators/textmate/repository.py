@@ -47,7 +47,7 @@ import sys
 
 from ...diagnostics.errors import GeneratorError
 from ...mgff.common.rules import Reference, Rule
-from ...mgff.systems.model import GrammarModel, Production, Target
+from ...mgff.systems.grammar import GrammarModel, Production, GrammarTarget
 from ..utils.styles import styles_of
 from ..utils.highlight import token_names_in_order
 from ..utils.machine import POP, STAY
@@ -327,7 +327,7 @@ class RepositoryBuilder:
 
     # -- a grammar of one phase ---------------------------------------------
 
-    def build_tokens(self, target: Target) -> None:
+    def build_tokens(self, target: GrammarTarget) -> None:
         """One entry per match `File` names, and one including them in order.
 
         This is what a grammar of a single phase amounts to: a machine of one

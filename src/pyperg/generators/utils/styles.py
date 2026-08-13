@@ -24,7 +24,7 @@ a plain `Keyword`.
 from __future__ import annotations
 
 from ...diagnostics.errors import GeneratorError
-from ...mgff.systems.model import Production
+from ...mgff.systems.grammar import Production
 
 #: The styles a match may take, taken from Kate's default styles. A style means
 #: the same thing to every backend.

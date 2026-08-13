@@ -8,7 +8,7 @@ import pytest
 from pyperg.diagnostics.errors import GeneratorError
 from pyperg.generators.regex import RegexGenerator
 from pyperg.mgff.itemizing.itemizer import itemize_text
-from pyperg.mgff.systems.model import parse, rule_tree_factory, resolve
+from pyperg.mgff.systems.grammar import parse, rule_tree_factory, resolve
 
 def fixture_text(name: str) -> str:
     return (Path(__file__).parent / "fixtures" / name).read_text(encoding="utf-8")

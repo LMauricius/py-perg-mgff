@@ -29,7 +29,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from ...diagnostics.errors import GeneratorError
-from ...mgff.systems.model import GrammarModel, Production, Target
+from ...mgff.systems.grammar import GrammarModel, Production, GrammarTarget
 from ..utils.pipeline import (
     FINAL_TARGET,
     rewrite_terminals_as_calls,
@@ -58,8 +58,8 @@ def is_skipped(production: Production) -> bool:
 class AntlrPhases:
     """The grammar as ANTLR's lexer and parser, and what each production is."""
 
-    lexer: Target
-    parser: Target
+    lexer: GrammarTarget
+    parser: GrammarTarget
     #: The list the parser reads, from `> over(…)`, or None when the parser
     #: phase re-reads the text and its terminals are literals.
     read_list: str | None

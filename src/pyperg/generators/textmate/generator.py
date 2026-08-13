@@ -29,7 +29,7 @@ import json
 from pathlib import Path
 
 from ...diagnostics.errors import GeneratorError
-from ...mgff.systems.model import GrammarModel
+from ...mgff.systems.grammar import GrammarModel
 from ..base import Generator
 from ..utils.naming import pascal_case, safe_file_name, safe_identifier, words_of
 from ..utils.settings import setting_value, setting_values

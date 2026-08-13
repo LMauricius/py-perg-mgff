@@ -8,7 +8,7 @@ from pathlib import Path
 from ...diagnostics.source import SourceFile
 from ...generators import registry
 from ...mgff.itemizing.itemizer import itemize
-from ...mgff.systems.model import parse, rule_tree_factory, resolve
+from ...mgff.systems.grammar import parse, rule_tree_factory, resolve
 from .base import Command
 
 

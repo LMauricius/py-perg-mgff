@@ -49,7 +49,7 @@ from ...mgff.common.rules import (
     Sequence,
 )
 from ...mgff.itemizing.cst import Item, Text
-from ...mgff.systems.model import Production, Target
+from ...mgff.systems.grammar import Production, GrammarTarget
 from .styles import styles_of
 from .naming import NameAllocator, safe_identifier
 from .regex import regex_of
@@ -360,7 +360,7 @@ class Classifier:
     answered would not be.
     """
 
-    def __init__(self, target: Target) -> None:
+    def __init__(self, target: GrammarTarget) -> None:
         self.target = target
         self.roles: dict[str, str] = {}
         #: True while the fixpoint is being computed, so the recomputation reads
@@ -541,7 +541,7 @@ class MachineBuilder:
     same reason the resolver does.
     """
 
-    def __init__(self, parse: Target, order: list[str] | None = None) -> None:
+    def __init__(self, parse: GrammarTarget, order: list[str] | None = None) -> None:
         self.parse = parse
         #: The order tokens are tried in, from `Lex`'s `File` where there is one.
         self.order = order or []

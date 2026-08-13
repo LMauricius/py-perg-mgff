@@ -7,7 +7,7 @@ from pyperg.mgff.common.characters import CHARACTER_SET
 from pyperg.mgff.common.charset import parse_character_set
 from pyperg.mgff.common.rules import Choice, MacroCall, Reference, Repetition, Sequence
 from pyperg.mgff.common.order import rule_tree_macro_order
-from pyperg.mgff.systems.model import Production, parse, rule_tree_factory, resolve
+from pyperg.mgff.systems.grammar import Production, parse, rule_tree_factory, resolve
 from pyperg.diagnostics.errors import GeneratorError
 from pyperg.generators.utils.classes import match_classes_of
 from pyperg.generators.utils.pipeline import (

@@ -27,7 +27,7 @@ from ...mgff.common.rules import (
     Repetition,
     Sequence,
 )
-from ...mgff.systems.model import Production
+from ...mgff.systems.grammar import Production
 
 def walk_rule_tree(node: Rule) -> Iterator[Rule]:
     """Every node of a tree, the node itself first."""

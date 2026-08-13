@@ -18,7 +18,7 @@ from pyperg.generators.utils.machine import (
 )
 from pyperg.generators.utils.regex import regex_of
 from pyperg.mgff.itemizing.itemizer import itemize_text
-from pyperg.mgff.systems.model import parse, rule_tree_factory, resolve
+from pyperg.mgff.systems.grammar import parse, rule_tree_factory, resolve
 
 MGFF = Path(__file__).parent.parent / "examples" / "mgff.mgff"
 

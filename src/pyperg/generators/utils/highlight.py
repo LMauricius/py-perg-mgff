@@ -11,14 +11,14 @@ The one question that *is* format-specific — how to spell a match — is not h
 from __future__ import annotations
 
 from ...diagnostics.errors import GeneratorError
-from ...mgff.systems.model import Production, Target
+from ...mgff.systems.grammar import Production, GrammarTarget
 from .walk import referenced_production_names
 
 #: The macro a target starts at. Every highlighting backend begins there.
 START_PRODUCTION = "File"
 
 
-def start_production_of(target: Target) -> Production:
+def start_production_of(target: GrammarTarget) -> Production:
     """A target's `File` production, which is where generation begins."""
     production = target.productions.get(START_PRODUCTION)
     if production is None:
@@ -30,7 +30,7 @@ def start_production_of(target: Target) -> Production:
     return production
 
 
-def token_names_in_order(target: Target) -> list[str]:
+def token_names_in_order(target: GrammarTarget) -> list[str]:
     """The token productions `File` names, in the order they were written.
 
     A highlighter takes the first rule that matches, so this order is the

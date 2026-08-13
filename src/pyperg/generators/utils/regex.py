@@ -33,7 +33,7 @@ from collections.abc import Callable, Mapping
 from ...mgff.common.characters import character_set_matched_by
 from ...mgff.common.charset import CharacterSetPart, CharacterSet
 from ...mgff.common.rules import Choice, MacroCall, Rule, Repetition, Sequence
-from ...mgff.systems.model import Production
+from ...mgff.systems.grammar import Production
 
 #: Characters that need a backslash outside a character class.
 METACHARACTERS = set(r".^$*+?()[]{}|\\")

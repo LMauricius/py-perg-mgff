@@ -2,7 +2,14 @@
 
 from .attributes import collect_attributes, parse_attribute
 from .context import CallContext
-from .model import GrammarModel, Production, Target, parse, rule_tree_factory, resolve
+from .grammar import (
+    GrammarModel,
+    Production,
+    GrammarTarget,
+    parse,
+    rule_tree_factory,
+    resolve,
+)
 from ..common.rules import Choice, MacroCall, Rule, Reference, Repetition, Sequence
 
 __all__ = [
@@ -15,7 +22,7 @@ __all__ = [
     "Reference",
     "Repetition",
     "Sequence",
-    "Target",
+    "GrammarTarget",
     "collect_attributes",
     "parse_attribute",
     "parse",

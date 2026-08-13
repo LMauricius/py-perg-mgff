@@ -39,7 +39,7 @@ from ...diagnostics.errors import GeneratorError
 from ...mgff.common.characters import character_set_matched_by
 from ...mgff.common.rules import Choice, Reference, Rule
 from ...mgff.itemizing.escapes import escape_character
-from ...mgff.systems.model import GrammarModel, Production, Target
+from ...mgff.systems.grammar import GrammarModel, Production, GrammarTarget
 from .classes import match_classes_of
 from .settings import setting_value
 from .streams import pushed_list_names_of
@@ -53,7 +53,7 @@ FINAL_TARGET = "Parse"
 class ChainedTargetStage:
     """One phase of the chain, and what it reads."""
 
-    target: Target
+    target: GrammarTarget
     #: The phase before this one, None for the one that reads text.
     previous: "ChainedTargetStage | None" = None
     #: The list this phase matches over, None when it matches characters.
@@ -104,7 +104,7 @@ def target_stage_chain_of(model: GrammarModel) -> list[ChainedTargetStage]:
     return stages
 
 
-def _targets_in_order(model: GrammarModel) -> list[Target]:
+def _targets_in_order(model: GrammarModel) -> list[GrammarTarget]:
     """The targets ordered by their `post` attributes, first to last."""
     by_name = {target.name: target for target in model.targets}
     # Who each target follows, and — read the other way — who follows it.
@@ -144,7 +144,7 @@ def _targets_in_order(model: GrammarModel) -> list[Target]:
             )
         next_of[after] = name
 
-    ordered: list[Target] = []
+    ordered: list[GrammarTarget] = []
     name: str | None = firsts[0]
     while name is not None:
         ordered.append(by_name[name])

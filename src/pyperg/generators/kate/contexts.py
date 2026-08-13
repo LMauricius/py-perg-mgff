@@ -47,7 +47,7 @@ from __future__ import annotations
 import sys
 
 from ...mgff.common.rules import Reference
-from ...mgff.systems.model import GrammarModel, Production, Target
+from ...mgff.systems.grammar import GrammarModel, Production, GrammarTarget
 from ..utils.styles import styles_of
 from ..utils.highlight import token_names_in_order
 from ..utils.machine import POP
@@ -233,7 +233,7 @@ class ContextBuilder:
 
     # -- a grammar of one phase ---------------------------------------------
 
-    def build_tokens_context(self, target: Target) -> None:
+    def build_tokens_context(self, target: GrammarTarget) -> None:
         """One context holding a rule for every match `File` names.
 
         A match that could match nothing is left out, with a note: Kate tries

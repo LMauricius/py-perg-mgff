@@ -23,7 +23,7 @@ from __future__ import annotations
 from ...diagnostics.errors import GeneratorError
 from ...mgff.common.characters import character_set_matched_by
 from ...mgff.common.rules import Choice, MacroCall, Reference, Repetition, Rule, Sequence
-from ...mgff.systems.model import Production
+from ...mgff.systems.grammar import Production
 from ..utils.naming import NameAllocator, safe_identifier, snake_case
 from ..utils.walk import literal_of, merge_adjacent_literals, top_level_parts
 from .charset import antlr_character_set, antlr_literal

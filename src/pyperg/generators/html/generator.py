@@ -29,8 +29,8 @@ from pathlib import Path
 
 from ...diagnostics.errors import GeneratorError
 from ...mgff.common.rules import Rule
-from ...mgff.systems.model import GrammarModel, Production
-from ...mgff.systems.model import Target
+from ...mgff.systems.grammar import GrammarModel, Production
+from ...mgff.systems.grammar import GrammarTarget
 from ..base import Generator
 
 
@@ -53,7 +53,9 @@ class HtmlGenerator(Generator):
 
     # -- the pattern -------------------------------------------------------
 
-    def iterate(self, targets: Iterable[Target]) -> Iterator[tuple[str, Production]]:
+    def iterate(
+        self, targets: Iterable[GrammarTarget]
+    ) -> Iterator[tuple[str, Production]]:
         """
         Iterates over (name, prod) tuples,
         for all non-parametrized productions in all targets and prefixes.

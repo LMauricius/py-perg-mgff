@@ -8,7 +8,7 @@ from pathlib import Path
 
 from ..mgff.common.order import rule_tree_macro_order
 from ..mgff.semantics.macros import Macro, MacroDefinition
-from ..mgff.systems.model import GrammarModel
+from ..mgff.systems.grammar import GrammarModel
 
 class Generator(ABC):
     """A backend turning a resolved grammar into output files.

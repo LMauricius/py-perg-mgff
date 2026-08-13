@@ -27,7 +27,7 @@ from pathlib import Path
 
 from ...diagnostics.errors import GeneratorError
 from ...mgff.common.rules import Rule
-from ...mgff.systems.model import GrammarModel, Production
+from ...mgff.systems.grammar import GrammarModel, Production
 from ..base import Generator
 from ..utils.regex import regex_of
 from ..utils.streams import pushed_list_names_of, stored_field_of

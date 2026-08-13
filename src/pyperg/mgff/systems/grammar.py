@@ -70,7 +70,7 @@ class Production:
 
 
 @dataclass(slots=True)
-class Target:
+class GrammarTarget:
     """One generation phase, typically `Lex` for tokens and `Parse` for grammar."""
 
     name: str
@@ -86,16 +86,16 @@ class GrammarModel:
     """The whole resolved grammar."""
 
     name: str
-    targets: list[Target] = field(default_factory=list)
+    targets: list[GrammarTarget] = field(default_factory=list)
     #: The macros written outside every target, resolved as a target of their
     #: own. A grammar generating one thing needs no phases at all, and a backend
     #: such as the regular-expression one reads only this.
-    globals: Target = field(default_factory=lambda: Target(name=""))
+    globals: GrammarTarget = field(default_factory=lambda: GrammarTarget(name=""))
     #: The `>` lines at the top of the file, describing the grammar itself. This
     #: is where a backend reads settings such as the generated language's name.
     attributes: dict[str, list[str]] = field(default_factory=dict)
 
-    def target(self, name: str) -> Target | None:
+    def target(self, name: str) -> GrammarTarget | None:
         """One target by name, or None when the grammar has no such phase."""
         return next((target for target in self.targets if target.name == name), None)
 
@@ -165,13 +165,13 @@ def resolve_target(
     name: str,
     scope_target: Scope,
     earlier_targets: list[TargetScope],
-) -> Target:
+) -> GrammarTarget:
     """Resolve every production one target owns or reaches.
 
     The file scope is resolved through this too, under the empty name, which is
     what a grammar written without targets amounts to.
     """
-    target = Target(name=name, attributes=collect_scope_attributes(scope_target))
+    target = GrammarTarget(name=name, attributes=collect_scope_attributes(scope_target))
     resolver = _TargetResolver(macros, target, earlier_targets)
     # Seed with the macros written directly in the target; references then pull
     # in whatever else they reach, including macros shared outside it. A macro
@@ -188,7 +188,10 @@ class _TargetResolver:
     """Builds one target's production table, following references as it goes."""
 
     def __init__(
-        self, macros: list[Macro], target: Target, earlier_targets: list[TargetScope]
+        self,
+        macros: list[Macro],
+        target: GrammarTarget,
+        earlier_targets: list[TargetScope],
     ) -> None:
         self.macros = macros
         self.target = target

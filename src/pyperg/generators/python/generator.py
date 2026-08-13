@@ -8,7 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ...diagnostics.errors import GeneratorError
-from ...mgff.systems.model import GrammarModel
+from ...mgff.systems.grammar import GrammarModel
 from ..base import Generator
 
 

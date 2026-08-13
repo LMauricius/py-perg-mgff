@@ -28,7 +28,7 @@ from __future__ import annotations
 import re
 
 from ...diagnostics.errors import GeneratorError
-from ...mgff.systems.model import Production
+from ...mgff.systems.grammar import Production
 
 #: What a field or a list may be called. Deliberately an identifier, since a
 #: field name has to survive into whatever the backend generates.
