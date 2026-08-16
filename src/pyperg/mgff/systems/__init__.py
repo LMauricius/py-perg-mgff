@@ -8,7 +8,7 @@ from .grammar import (
     GrammarTarget,
     parse,
     rule_tree_factory,
-    resolve,
+    resolveGrammar,
 )
 from ..common.rules import Choice, MacroCall, Rule, Reference, Repetition, Sequence
 
@@ -27,5 +27,5 @@ __all__ = [
     "parse_attribute",
     "parse",
     "rule_tree_factory",
-    "resolve",
+    "resolveGrammar",
 ]

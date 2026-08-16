@@ -18,7 +18,7 @@ from pyperg.generators.utils.machine import (
 )
 from pyperg.generators.utils.regex import regex_of
 from pyperg.mgff.itemizing.itemizer import itemize_text
-from pyperg.mgff.systems.grammar import parse, rule_tree_factory, resolve
+from pyperg.mgff.systems.grammar import parse, rule_tree_factory, resolveGrammar
 
 MGFF = Path(__file__).parent.parent / "examples" / "mgff.mgff"
 
@@ -50,7 +50,7 @@ t Parse (
 
 def build_machine_from_text(text: str, name: str = "<test>"):
     fileScope = parse(itemize_text(text, name), rule_tree_factory)
-    model = resolve(fileScope, name, KateGenerator().macros())
+    model = resolveGrammar(fileScope, name, KateGenerator().macros())
     parse_target = model.target("Parse")
     lex_target = model.target("Lex")
     return (
@@ -272,7 +272,7 @@ def test_a_production_is_classified_the_same_whoever_asks_first():
         ")\n"
     )
     fileScope = parse(itemize_text(text, "<test>"), rule_tree_factory)
-    model = resolve(fileScope, "<test>", KateGenerator().macros())
+    model = resolveGrammar(fileScope, "<test>", KateGenerator().macros())
     parse_target = model.target("Parse")
     assert parse_target is not None
 

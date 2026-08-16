@@ -12,7 +12,7 @@ from pyperg.mgff.itemizing.itemizer import itemize_text
 from pyperg.mgff.common.order import rule_tree_macro_order
 from pyperg.mgff.systems.context import CallContext
 from pyperg.mgff.common.rules import MacroCall, Rule, Reference, Repetition
-from pyperg.mgff.systems.grammar import parse, rule_tree_factory, resolve
+from pyperg.mgff.systems.grammar import parse, rule_tree_factory, resolveGrammar
 
 def capture_args(item: Item, match: re.Match[str]) -> dict[str, object]:
     """What a capture carries: the name in front of the colon, and the rule.
@@ -56,7 +56,7 @@ def macro_order_with_capture() -> list:
 
 def model_from_text(text: str, macros: list | None = None):
     fileScope = parse(itemize_text(text, "<test>"), rule_tree_factory)
-    return resolve(fileScope, "<test>", macros or macro_order_with_capture())
+    return resolveGrammar(fileScope, "<test>", macros or macro_order_with_capture())
 
 
 def lex_target_rule_of(text: str, name: str, macros: list | None = None):

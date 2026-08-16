@@ -7,7 +7,12 @@ from pyperg.mgff.common.characters import CHARACTER_SET
 from pyperg.mgff.common.charset import parse_character_set
 from pyperg.mgff.common.rules import Choice, MacroCall, Reference, Repetition, Sequence
 from pyperg.mgff.common.order import rule_tree_macro_order
-from pyperg.mgff.systems.grammar import Production, parse, rule_tree_factory, resolve
+from pyperg.mgff.systems.grammar import (
+    Production,
+    parse,
+    rule_tree_factory,
+    resolveGrammar,
+)
 from pyperg.diagnostics.errors import GeneratorError
 from pyperg.generators.utils.classes import match_classes_of
 from pyperg.generators.utils.pipeline import (
@@ -387,7 +392,7 @@ t Parse (
 def highlight_stages_from_text(text: str):
     """The phases of a grammar, with every `over` already resolved."""
     fileScope = parse(itemize_text(text, "<test>"), rule_tree_factory)
-    model = resolve(fileScope, "<test>", rule_tree_macro_order())
+    model = resolveGrammar(fileScope, "<test>", rule_tree_macro_order())
     stages = target_stage_chain_of(model)
     for stage in stages:
         rewrite_terminals_as_calls(stage)

@@ -8,7 +8,7 @@ import pytest
 from pyperg.diagnostics.errors import GeneratorError
 from pyperg.generators.regex import RegexGenerator
 from pyperg.mgff.itemizing.itemizer import itemize_text
-from pyperg.mgff.systems.grammar import parse, rule_tree_factory, resolve
+from pyperg.mgff.systems.grammar import parse, rule_tree_factory, resolveGrammar
 
 def fixture_text(name: str) -> str:
     return (Path(__file__).parent / "fixtures" / name).read_text(encoding="utf-8")
@@ -18,7 +18,7 @@ def rendered_pattern_of(text: str, name: str = "<test>") -> str:
     """Resolve through the backend's own vocabulary, as `generate` does."""
     backend = RegexGenerator()
     fileScope = parse(itemize_text(text, name), rule_tree_factory)
-    return backend.render(resolve(fileScope, name, backend.macros()))
+    return backend.render(resolveGrammar(fileScope, name, backend.macros()))
 
 
 def matches_whole_string(pattern: str, text: str) -> bool:
@@ -149,7 +149,7 @@ def test_the_expression_is_written_as_one_file(tmp_path):
     fileScope = parse(
         itemize_text(fixture_text("regex.mgff"), "regex.mgff"), rule_tree_factory
     )
-    model = resolve(
+    model = resolveGrammar(
         fileScope,
         "regex.mgff",
         backend.macros(),

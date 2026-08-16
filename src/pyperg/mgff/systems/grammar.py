@@ -103,7 +103,7 @@ class GrammarModel:
 # -- resolution ------------------------------------------------------------
 
 
-def resolve(fileScope: Scope, name: str, macros: list[Macro]) -> GrammarModel:
+def resolveGrammar(fileScope: Scope, name: str, macros: list[Macro]) -> GrammarModel:
     """Read a lexed file as the model a rule-tree backend generates from.
 
     Parses the file with the rule-tree factory, then collects the productions per
